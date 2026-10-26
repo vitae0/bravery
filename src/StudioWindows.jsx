@@ -353,18 +353,40 @@ function SoundPanel({activeClip,onSoundEdit,onApply,busy,onOpen}){
     <button className="text-link" onClick={()=>onOpen('effects')}>Explore effects and intensity controls →</button>
   </div>;
 }
-function EffectPanel({activeClip,onApply,busy,onPeriodicOpen}){
+function EffectPanel({activeClip,onApply,onPreview,busy,onPeriodicOpen}){
   const [query,setQuery]=useState('');
   const [id,setId]=useState('bass-boost');
   const [intensity,setIntensity]=useState(1);
+  const [overrides,setOverrides]=useState({});
   const effect=EFFECTS.find(e=>e.id===id);
+  const params={...effect?.config,...overrides};
+  const parameterRanges={
+    gain:[-30,30,.5,' dB'],frequency:[30,18000,10,' Hz'],Q:[.1,16,.1,''],
+    seconds:[.1,8,.1,' s'],wet:[0,1,.02,'×'],time:[.02,2,.01,' s'],
+    feedback:[0,.9,.02,'×'],depth:[0,.03,.0005,' s'],rate:[.1,18,.1,' Hz'],
+    base:[.001,.05,.001,' s'],drive:[.1,60,.2,'×'],threshold:[-70,0,1,' dB'],
+    ratio:[1,20,.5,'×'],attack:[.001,.3,.001,' s'],release:[.01,2,.01,' s'],
+    bits:[2,16,1,' bits'],hold:[1,32,1,'×'],semitones:[-24,24,1,' st'],
+    speed:[.35,3,.05,'×'],db:[-36,36,.5,' dB'],width:[0,3,.05,'×']
+  };
+  const chosen={...effect,config:params};
   return <div className="effect-inspector">
-    <div className="panel-banner"><WandSparkles size={20}/><span><strong>Advanced effects</strong><small>Choose an effect, adjust strength, then process a clip.</small></span></div>
+    <div className="panel-banner"><WandSparkles size={20}/><span><strong>Advanced effects</strong><small>Control individual DSP parameters. Test before rendering.</small></span></div>
     <input className="panel-search" placeholder="Search effect..." value={query} onChange={e=>setQuery(e.target.value)}/>
-    <div className="fx-picker">{EFFECTS.filter(e=>(e.name+' '+e.category).toLowerCase().includes(query.toLowerCase())).map(e=><button className={id===e.id?'selected':''} key={e.id} onClick={()=>setId(e.id)}>{e.name}<small>{e.category}</small></button>)}</div>
+    <div className="fx-picker">{EFFECTS.filter(e=>(e.name+' '+e.category).toLowerCase().includes(query.toLowerCase())).map(e=><button className={id===e.id?'selected':''} key={e.id} onClick={()=>{setId(e.id);setOverrides({});setIntensity(1);}}>{e.name}<small>{e.category}</small></button>)}</div>
     <div className="fx-selected"><strong>{effect?.name}</strong><small>{effect?.detail}</small></div>
     <Parameter label="Effect intensity" min={.05} max={2} step={.05} value={intensity} onChange={setIntensity} unit="×"/>
-    <Action disabled={!activeClip||busy} onClick={()=>onApply(effect,intensity)}><Zap size={16}/> Apply to selected clip</Action>
+    {Object.entries(params).filter(([name,value])=>typeof value==='number').map(([name,value])=>{
+      const settings=parameterRanges[name] || [0,Math.max(10,value*2),.1,''];
+      return <Parameter key={id+'-'+name} label={name.replace(/([A-Z])/g,' $1').replace(/^./,x=>x.toUpperCase())}
+        value={value} min={settings[0]} max={settings[1]} step={settings[2]} unit={settings[3]}
+        onChange={v=>setOverrides(prev=>({...prev,[name]:v}))}/>;
+    })}
+    {Object.keys(overrides).length>0&&<button className="text-link" onClick={()=>setOverrides({})}>Reset to preset defaults</button>}
+    <div className="panel-row">
+      <button className="panel-secondary" disabled={!activeClip||busy} onClick={()=>onPreview(chosen,intensity)}><Play size={15}/> Preview</button>
+      <Action disabled={!activeClip||busy} onClick={()=>onApply(chosen,intensity)}><Zap size={16}/> Apply to selected clip</Action>
+    </div>
     <button className="text-link" onClick={onPeriodicOpen}>Repeat this effect every N beats →</button>
   </div>;
 }
@@ -465,7 +487,7 @@ function SoundDesigner({soundId,onChangeSound,onAdd,onPreview,busy}){
 
 export function WindowLayer({windows,onClose,onFocus,tracks,bpm,setBpm,activeClip,regions,sections,
   onTrackEdit,onGeneratePiano,onAnalyzeTempo,onUpdateTempo,onAddTempo,onRemoveTempo,
-  onDetectSections,onUpdateSection,onRemoveSection,onAddSection,onJump,onMaster,onDenoise,onSoundEdit,onEffect,
+  onDetectSections,onUpdateSection,onRemoveSection,onAddSection,onJump,onMaster,onDenoise,onSoundEdit,onEffect,onPreviewEffect,
   busy,settings,onSettings,onOpen,onOpenRemix,soundId,onChangeSound,onDesignedSound,onSoundPreview,onDrums}){
   const buffer=activeClip?.buffer;
   const positions={piano:{x:140,y:115},mixer:{x:245,y:150},tempo:{x:310,y:125},sections:{x:360,y:140},
@@ -481,7 +503,7 @@ export function WindowLayer({windows,onClose,onFocus,tracks,bpm,setBpm,activeCli
     {w.id==='bass'&&<BassPanel buffer={buffer} onApply={onMaster} busy={busy}/>}
     {w.id==='noise'&&<NoisePanel buffer={buffer} onApply={onDenoise} busy={busy}/>}
     {w.id==='sound'&&<SoundPanel activeClip={activeClip} onSoundEdit={onSoundEdit} onOpen={onOpen} busy={busy}/>}
-    {w.id==='effects'&&<EffectPanel activeClip={activeClip} onApply={onEffect} onPeriodicOpen={()=>onOpen('recurrence')} busy={busy}/>}
+    {w.id==='effects'&&<EffectPanel activeClip={activeClip} onApply={onEffect} onPreview={onPreviewEffect} onPeriodicOpen={()=>onOpen('recurrence')} busy={busy}/>}
     {w.id==='settings'&&<SettingsPanel settings={settings} onSettings={onSettings} bpm={bpm} onSetBpm={setBpm}/>}
     {w.id==='recurrence'&&<PeriodicPanel onOpenRemix={onOpenRemix}/>}
   </DraggableWindow>)}</div>;
