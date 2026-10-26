@@ -36,7 +36,7 @@ function Waveform({clip, color, selected, width}) {
   useEffect(() => {
     const canvas=canvasRef.current;
     if (!canvas) return;
-    const w=Math.min(1800,Math.max(80,Math.ceil(width))),h=72;
+    const w=Math.min(1800,Math.max(5,Math.ceil(width))),h=72;
     canvas.width=w;canvas.height=h;
     const ctx=canvas.getContext('2d');
     const data=clip.buffer.getChannelData(0);
@@ -102,6 +102,7 @@ function App() {
   const audioInput=useRef(null),projectInput=useRef(null);
   const clipClipboard=useRef(null);
   const dragState=useRef(null);
+  const timelineScrollRef=useRef(null);
   const msgTimer=useRef(null);
 
   const notify = useCallback((text) => {
@@ -224,6 +225,12 @@ function App() {
     setZoom(after);
     requestAnimationFrame(()=>{scroll.scrollLeft=Math.max(0,before*after-(event.clientX-rect.left-210));});
   },[zoom]);
+  useEffect(()=>{
+    const element=timelineScrollRef.current;
+    if(!element)return;
+    element.addEventListener('wheel',onTrackWheel,{passive:false});
+    return ()=>element.removeEventListener('wheel',onTrackWheel);
+  },[onTrackWheel]);
   const pause=useCallback(()=>{
     if(!playing){playFrom(playheadRef.current);return;}
     const at=playheadRef.current;
@@ -890,7 +897,7 @@ function App() {
 
         <section className="timeline-section">
           <div className="section-title"><div><Layers size={17}/><h3>Timeline</h3><span className="track-counter">{tracks.length} tracks</span></div><span className="timeline-hint">Wheel over track = zoom · Right-click clip = edit · Drag edges = trim</span></div>
-          <div className="timeline-scroll" onWheel={onTrackWheel}>
+          <div className="timeline-scroll" ref={timelineScrollRef}>
             <div className="timeline-content" style={{width:timelineWidth+210}}>
               <div className="ruler-row">
                 <div className="track-head ruler-label"><span>TRACKS</span></div>
