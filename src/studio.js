@@ -1,4 +1,4 @@
-import { applyEffect, makeBuffer, slicedClip, SAMPLE_RATE } from './audio.js';
+import { applyEffect, makeBuffer, slicedClip, generateSound, SAMPLE_RATE } from './audio.js';
 
 // A tempo is an attribute of a region, not necessarily of the entire song.
 export function bpmAt(time, regions, fallback = 150) {
@@ -364,4 +364,64 @@ export async function periodicProcess(clip,effect,events,{widthBeats=0.5,mix=0.7
     }
   }
   return result;
+}
+
+
+// Editable procedural one-shot designer: pitch, tail, saturation, envelopes and filters.
+export function designSound(id,{
+  semitones=0,attack=0,release=.1,length=0,gain=1,drive=1,
+  lowpass=16000,highpass=15,reverse=false,stereo=.1
+}={}){
+  const source=generateSound(id),rate=source.sampleRate;
+  const speed=Math.pow(2,semitones/12);
+  const desired=length>0?length:source.duration/speed;
+  const frames=Math.min(Math.round(rate*8),Math.max(1,Math.round(desired*rate)));
+  const output=makeBuffer(2,frames,rate);
+  for(let c=0;c<2;c++){
+    const input=source.getChannelData(Math.min(c,source.numberOfChannels-1));
+    const dst=output.getChannelData(c);
+    const lp=Math.exp(-2*Math.PI*Math.min(lowpass,rate/2-1)/rate);
+    const hp=Math.exp(-2*Math.PI*Math.max(0,highpass)/rate);
+    let low=0,high=0,oldInput=0;
+    for(let i=0;i<frames;i++){
+      const at=i*speed;
+      const j=Math.floor(at),fraction=at-j;
+      const sample=j<input.length?(input[j]*(1-fraction)+(input[Math.min(input.length-1,j+1)]||0)*fraction):0;
+      low=low*lp+sample*(1-lp);
+      high=(high+low-oldInput)*hp;oldInput=low;
+      const envelope=Math.min(1,attack>0?i/(attack*rate):1,release>0?(frames-1-i)/(release*rate):1);
+      const width=c===0?1+stereo/3:1-stereo/3;
+      const processed=Math.tanh(high*Math.max(.01,drive))/Math.tanh(Math.max(.01,drive));
+      dst[i]=Math.max(-1,Math.min(1,processed*envelope*gain*width));
+    }
+    if(reverse)dst.reverse();
+  }
+  return output;
+}
+
+export const DRUM_LANES=[
+  {id:'hard-kick',name:'Hardtekk kick',color:'#bd98f1'},
+  {id:'boom',name:'Boom impact',color:'#ed9d80'},
+  {id:'808',name:'808 sub',color:'#76bfbd'},
+  {id:'clap',name:'Clap',color:'#efb6c1'},
+  {id:'snare',name:'Snare',color:'#e6d19a'},
+  {id:'hat',name:'Hi-hat',color:'#89c5e9'}
+];
+export function buildDrumEvents(pattern,{bars=4,bpm=150,swing=0,velocity=1,start=0}={}){
+  const events=[];
+  const stepLength=60/bpm/4;
+  for(let bar=0;bar<bars;bar++){
+    for(const lane of DRUM_LANES){
+      const steps=pattern[lane.id]||[];
+      for(let step=0;step<16;step++){
+        const power=Number(steps[step]||0);
+        if(power<=0)continue;
+        events.push({
+          time:start+(bar*16+step)*stepLength+(step%2?swing*stepLength:0),
+          id:lane.id,level:Math.max(0,Math.min(1.5,velocity*power))
+        });
+      }
+    }
+  }
+  return events.sort((a,b)=>a.time-b.time);
 }
