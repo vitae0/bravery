@@ -22,7 +22,7 @@ export function timelineBeats(start, end, {source = 'project', bpm = 150, custom
     ? [...regions].filter(r => r.end > start && r.start < end).sort((a, b) => a.start - b.start)
     : [{start:0, end, bpm:source==='custom'?customBpm:bpm}];
   const events = [];
-  for (const s of segments) {
+  for (const [segmentIndex, s] of segments.entries()) {
     const b = 60 / Math.max(40, Math.min(250,s.bpm||bpm));
     const cycle = b * Math.max(1,every);
     const begin = Math.max(start,s.start), finish = Math.min(end,s.end);
@@ -31,7 +31,7 @@ export function timelineBeats(start, end, {source = 'project', bpm = 150, custom
     for (let n=n0; n<4000; n++){
       const t = phase+n*cycle;
       if (t>=finish-1e-6)break;
-      events.push({time:t, bpm:s.bpm || bpm, beatIndex:n*Math.max(1,every)});
+      events.push({time:t, bpm:s.bpm || bpm, beatIndex:n*Math.max(1,every), regionId:source==='map'?s.id??segmentIndex:'project', regionStart:s.start, regionEnd:s.end});
       if(events.length>=1200)return events;
     }
   }
