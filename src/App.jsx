@@ -76,6 +76,8 @@ function App() {
   const [historyRevision,setHistoryRevision]=useState(0);
   const [projectName,setProjectName]=useState('Untitled remix');
   const [selection,setSelection]=useState(null);
+  const [selectedClipIds,setSelectedClipIds]=useState([]);
+  const selectionAnchorRef=useRef(null);
   const [playhead,setPlayhead]=useState(0);
   const playheadRef=useRef(0);
   const [playing,setPlaying]=useState(false);
@@ -150,6 +152,30 @@ function App() {
   const timelineWidth=Math.max(1050,Math.round(end*zoom));
   const activeTrack=tracks.find(t=>t.id===selection?.trackId);
   const activeClip=activeTrack?.clips.find(c=>c.id===selection?.clipId);
+  const selectedIdSet=useMemo(()=>new Set(selectedClipIds),[selectedClipIds]);
+  const selectOnly=useCallback((trackId,clipId)=>{
+    setSelection(trackId?{trackId,clipId:clipId||null}:null);
+    setSelectedClipIds(clipId?[clipId]:[]);
+    selectionAnchorRef.current=clipId||null;
+  },[]);
+  const clearSelection=useCallback(()=>{
+    setSelection(null);setSelectedClipIds([]);selectionAnchorRef.current=null;
+  },[]);
+  const multiSelect=useCallback((event,trackId,clipId,keepGroup=false)=>{
+    const ordered=orderedClipIds(tracksRef.current);
+    const chosen=selectClipIds({
+      ids:selectedClipIds,anchor:selectionAnchorRef.current,target:clipId,ordered,
+      ctrl:event.ctrlKey||event.metaKey,shift:event.shiftKey,keepGroup
+    });
+    selectionAnchorRef.current=chosen.anchor;
+    setSelectedClipIds(chosen.ids);
+    const focusTrack=tracksRef.current.find(t=>t.clips.some(c=>c.id===chosen.focus));
+    setSelection(focusTrack?{trackId:focusTrack.id,clipId:chosen.focus}:null);
+    if(!(event.ctrlKey||event.metaKey||event.shiftKey)&&studioSettings.autoOpenEditor)
+      openWindow('sound');
+    return chosen.ids;
+  },[selectedClipIds,studioSettings.autoOpenEditor]);
+
   const openWindow=useCallback((id)=>{
     setOpenWindows(old=>[...old.filter(x=>x.id!==id),{id}]);
   },[]);
