@@ -414,13 +414,13 @@ function App() {
           return {...plain,audio:key};
         })
       }));
-      zip.file('project.json',JSON.stringify({format:'bravery-project',version:1,name:projectName,bpm,tracks:serialized},null,2));
+      zip.file('project.json',JSON.stringify({format:'bravery-project',version:2,name:projectName,bpm,tempoRegions,songSections,studioSettings,tracks:serialized},null,2));
       const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
       downloadBlob(blob,fileSafe(projectName)+'.bravery');
       notify('Project saved. Keep the .bravery file to reopen it.');
     }catch(err){notify('Could not save project: '+err.message);}
     finally{setBusy(false);}
-  },[bpm,notify,projectName]);
+  },[bpm,notify,projectName,tempoRegions,songSections,studioSettings]);
 
   const loadProject=useCallback(async(file)=>{
     if(!file)return;
@@ -459,10 +459,13 @@ function App() {
       stopPlayback(true);commit(restored);setSelection(null);
       setProjectName(meta.name||'Imported project');
       setBpm(clamp(Number(meta.bpm)||150,40,240));
-      notify('Project loaded.');
+      setTempoRegions(Array.isArray(meta.tempoRegions)?meta.tempoRegions:[]);
+      setSongSections(Array.isArray(meta.songSections)?meta.songSections:[]);
+      if(meta.studioSettings)onSettings(meta.studioSettings);
+      notify('Project loaded with tempo and arrangement markers.');
     }catch(err){notify('Could not open project: '+err.message);}
     finally{setBusy(false);}
-  },[commit,getAudioContext,notify,stopPlayback]);
+  },[commit,getAudioContext,notify,stopPlayback,onSettings]);
 
   const removeTrack=useCallback(id=>{
     stopPlayback();commit(old=>old.filter(t=>t.id!==id));
