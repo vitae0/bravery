@@ -427,3 +427,22 @@ export function buildDrumEvents(pattern,{bars=4,bpm=150,swing=0,velocity=1,start
   }
   return events.sort((a,b)=>a.time-b.time);
 }
+
+
+// Non-destructive structural slicing: each section retains the same audio buffer.
+export function splitClipIntoSections(clip,sections,createId=()=>crypto.randomUUID()){
+  if(!clip||clip.duration<=0)return [];
+  const from=clip.start,to=clip.start+clip.duration;
+  const cuts=[from,...sections.map(s=>s.start).filter(x=>x>from+.001&&x<to-.001),to]
+    .sort((a,b)=>a-b).filter((x,i,arr)=>i===0||x-arr[i-1]>.001);
+  if(cuts.length<=2)return [clip];
+  return cuts.slice(0,-1).map((a,i)=>{
+    const b=cuts[i+1];
+    const label=sections.find(section=>a>=section.start-.01&&a<section.end-.01)?.name;
+    return {
+      ...clip,id:createId(),start:a,duration:b-a,
+      offset:clip.offset+(a-clip.start),
+      name:label?clip.name+' · '+label:clip.name
+    };
+  });
+}
