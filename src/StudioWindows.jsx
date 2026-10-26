@@ -12,11 +12,11 @@ import { formatTime } from './audio.js';
 export const PANEL_TITLES={
   'mixer':'Mixer','piano':'Piano Roll','tempo':'Tempo Map','sections':'Song Sections',
   'bass':'Bass Lab','noise':'Noise Reduction','sound':'Sound Editor',
-  'effects':'Effects Rack','settings':'Studio Settings','recurrence':'Periodic FX'
+  'effects':'Effects Rack','settings':'Studio Settings','recurrence':'Periodic FX','designer':'Sound Designer','drums':'Drum Machine'
 };
 export const PANEL_ICONS={
   mixer:SlidersHorizontal,piano:Piano,tempo:Activity,sections:Layers,bass:BarChart3,
-  noise:Waves,sound:Music2,effects:WandSparkles,settings:Settings2,recurrence:RefreshCw
+  noise:Waves,sound:Music2,effects:WandSparkles,settings:Settings2,recurrence:RefreshCw,designer:Disc3,drums:ListMusic
 };
 const uid=()=>crypto.randomUUID();
 const range=(n)=>Array.from({length:n},(_,i)=>i);
@@ -131,6 +131,8 @@ export function RemixDock({tracks,clipSelection,playhead,bpm,regions,sections,bu
       <div className="dock-section">
         <div className="dock-section-title"><span>ADVANCED TOOLS</span><span className="dock-count">04</span></div>
         <div className="tool-grid">
+          <button onClick={()=>onOpen('drums')}><ListMusic size={16}/> Drum machine</button>
+          <button onClick={()=>onOpen('designer')}><Disc3 size={16}/> Sound design</button>
           <button onClick={()=>onOpen('piano')}><Piano size={16}/> Piano</button>
           <button onClick={()=>onOpen('tempo')}><Activity size={16}/> Tempo map</button>
           <button onClick={()=>onOpen('bass')}><BarChart3 size={16}/> Bass Lab</button>
@@ -380,16 +382,99 @@ function PeriodicPanel({onOpenRemix}){
   return <div className="panel-banner"><RefreshCw size={20}/><span><strong>Periodic audio processing</strong><small>Use the Remix Lab's Periodic FX tab. Select a clip, an effect, a repetition interval, wet mix and window size.</small>
     <button className="text-link" onClick={onOpenRemix}>Open the right Remix Lab →</button></span></div>;
 }
+
+const emptyDrums=()=>({
+  'hard-kick':range(16).map(i=>i%4===0?1:0),
+  'boom':range(16).map(i=>i===0?.8:0),
+  '808':range(16).map(i=>i===0||i===8?.75:0),
+  'clap':range(16).map(i=>i===4||i===12?1:0),
+  'snare':range(16).fill(0),
+  'hat':range(16).map(i=>i%2===0?.6:0)
+});
+function DrumMachine({bpm,onAdd}){
+  const [pattern,setPattern]=useState(emptyDrums);
+  const [bars,setBars]=useState(4);
+  const [localBpm,setLocalBpm]=useState(bpm);
+  const [swing,setSwing]=useState(0);
+  const [velocity,setVelocity]=useState(1);
+  const lanes=[['hard-kick','Hardtekk kick','#bf96f4'],['boom','Boom impact','#f4a483'],
+    ['808','808 sub','#88dbb9'],['clap','Clap','#f3b2cb'],
+    ['snare','Snare','#e5c98f'],['hat','Hi-hat','#89cbed']];
+  const change=(id,step,right)=>{
+    setPattern(p=>({...p,[id]:p[id].map((v,i)=>i!==step?v:right?(v>1?0:1.35):(v?0:1))}));
+  };
+  const preset=(name)=>{
+    const base=emptyDrums();
+    if(name==='Hardtekk'){base['hard-kick']=range(16).map(i=>i%4===0?1.2:0);base.boom=range(16).map(i=>i===0?1:0);}
+    if(name==='Four on floor'){base['hard-kick']=range(16).map(i=>i%4===0?1:0);base['hat']=range(16).map(i=>i%2?0.7:0);}
+    if(name==='Trap'){base['hard-kick']=range(16).map(i=>[0,7,11].includes(i)?1:0);base['snare']=range(16).map(i=>[4,12].includes(i)?1:0);base['hat']=range(16).map(i=>i%2===0?.65:0);}
+    if(name==='Empty')for(const key of Object.keys(base))base[key]=range(16).fill(0);
+    setPattern(base);
+  };
+  return <div className="drum-machine">
+    <div className="panel-banner"><ListMusic size={20}/><span><strong>16-step sequencer</strong><small>Accent with right-click. Pattern repeats for the selected bar count.</small></span></div>
+    <div className="panel-row wrap">
+      <Numeric label="BPM" value={localBpm} min={40} max={240} onChange={setLocalBpm}/>
+      <Numeric label="Bars" value={bars} min={1} max={64} onChange={setBars}/>
+      <Parameter label="Swing" min={0} max={.8} step={.05} value={swing} onChange={setSwing}/>
+      <Parameter label="Velocity" min={.1} max={1.5} step={.05} value={velocity} onChange={setVelocity}/>
+    </div>
+    <div className="piano-quick">{['Hardtekk','Four on floor','Trap','Empty'].map(name=><button key={name} onClick={()=>preset(name)}>{name}</button>)}</div>
+    <div className="drum-grid">
+      <div className="drum-scale"><span/> {range(16).map(i=><span key={i}>{i+1}</span>)}</div>
+      {lanes.map(([id,name,color])=><div className="drum-lane" key={id}>
+        <strong>{name}</strong>{range(16).map(step=><button key={step}
+          title={name+' · step '+(step+1)+' (right-click accent)'}
+          className={(pattern[id][step]?'lit ':'')+(pattern[id][step]>1?'accent ':'')+(step%4===0?'bar-divide':'')}
+          style={{'--lane-color':color}}
+          onClick={()=>change(id,step,false)}
+          onContextMenu={e=>{e.preventDefault();change(id,step,true);}} />)}
+      </div>)}
+    </div>
+    <p className="panel-hint">Pattern audio uses the integrated procedural one-shot synths. All generated events are movable clips.</p>
+    <Action onClick={()=>onAdd(pattern,{bpm:localBpm,bars,swing,velocity})}><Plus size={16}/> Insert drum sequence into timeline</Action>
+  </div>;
+}
+
+function SoundDesigner({soundId,onChangeSound,onAdd,onPreview,busy}){
+  const [parameters,setParameters]=useState({
+    semitones:0,attack:0,release:.15,length:0,gain:.85,drive:1,lowpass:16000,highpass:15,reverse:false,stereo:.1
+  });
+  const set=(key,value)=>setParameters(prev=>({...prev,[key]:value}));
+  return <div className="designer-panel">
+    <div className="panel-banner"><Disc3 size={21}/><span><strong>Build your own one-shot</strong><small>Sculpt pitch, punch, filters, distortion, stereo and release. All sound generation is local.</small></span></div>
+    <Select label="Source sound" value={soundId} onChange={onChangeSound} options={SOUNDS.map(s=>({value:s.id,label:s.name}))}/>
+    <div className="designer-grid">
+      <Parameter label="Pitch shift" min={-24} max={24} value={parameters.semitones} unit=" st" onChange={v=>set('semitones',v)}/>
+      <Parameter label="Gain" min={.05} max={2} value={parameters.gain} step={.05} unit="×" onChange={v=>set('gain',v)}/>
+      <Parameter label="Saturation" min={.1} max={15} value={parameters.drive} step={.1} unit="×" onChange={v=>set('drive',v)}/>
+      <Parameter label="Attack" min={0} max={1} value={parameters.attack} step={.01} unit="s" onChange={v=>set('attack',v)}/>
+      <Parameter label="Release" min={0} max={2} value={parameters.release} step={.01} unit="s" onChange={v=>set('release',v)}/>
+      <Parameter label="Duration (0=source)" min={0} max={5} value={parameters.length} step={.1} unit="s" onChange={v=>set('length',v)}/>
+      <Parameter label="Low-pass" min={250} max={18000} value={parameters.lowpass} step={50} unit=" Hz" onChange={v=>set('lowpass',v)}/>
+      <Parameter label="High-pass" min={0} max={1800} value={parameters.highpass} step={10} unit=" Hz" onChange={v=>set('highpass',v)}/>
+      <Parameter label="Stereo spread" min={0} max={1} step={.05} value={parameters.stereo} onChange={v=>set('stereo',v)}/>
+    </div>
+    <label className="checkbox-row"><input type="checkbox" checked={parameters.reverse} onChange={e=>set('reverse',e.target.checked)}/> Reverse waveform</label>
+    <div className="panel-row">
+      <button className="panel-secondary" disabled={busy} onClick={()=>onPreview(soundId,parameters)}><Play size={14}/> Preview sound</button>
+      <Action disabled={busy} onClick={()=>onAdd(soundId,parameters)}><Plus size={16}/> Insert designed sound</Action>
+    </div>
+  </div>;
+}
+
 export function WindowLayer({windows,onClose,onFocus,tracks,bpm,setBpm,activeClip,regions,sections,
   onTrackEdit,onGeneratePiano,onAnalyzeTempo,onUpdateTempo,onAddTempo,onRemoveTempo,
   onDetectSections,onUpdateSection,onRemoveSection,onAddSection,onJump,onMaster,onDenoise,onSoundEdit,onEffect,
-  busy,settings,onSettings,onOpen,onOpenRemix}){
+  busy,settings,onSettings,onOpen,onOpenRemix,soundId,onChangeSound,onDesignedSound,onSoundPreview,onDrums}){
   const buffer=activeClip?.buffer;
   const positions={piano:{x:140,y:115},mixer:{x:245,y:150},tempo:{x:310,y:125},sections:{x:360,y:140},
     bass:{x:250,y:90},noise:{x:390,y:165},sound:{x:450,y:130},effects:{x:350,y:110},
-    settings:{x:490,y:140},recurrence:{x:550,y:180}};
+    settings:{x:490,y:140},recurrence:{x:550,y:180},designer:{x:430,y:145},drums:{x:170,y:175}};
   return <div className="floating-window-layer">{windows.map((w,i)=><DraggableWindow key={w.id} id={w.id} index={i} position={positions[w.id]} onClose={()=>onClose(w.id)} onFocus={()=>onFocus(w.id)}>
     {w.id==='mixer'&&<Mixer tracks={tracks} onTrackEdit={onTrackEdit}/>}
+    {w.id==='drums'&&<DrumMachine bpm={bpm} onAdd={onDrums}/>}
+    {w.id==='designer'&&<SoundDesigner soundId={soundId} onChangeSound={onChangeSound} onAdd={onDesignedSound} onPreview={onSoundPreview} busy={busy}/>}
     {w.id==='piano'&&<PianoRoll bpm={bpm} onGenerate={onGeneratePiano}/>}
     {w.id==='tempo'&&<TempoPanel tracks={tracks} regions={regions} bpm={bpm} onAnalyze={onAnalyzeTempo} onUpdate={onUpdateTempo} onAdd={onAddTempo} onRemove={onRemoveTempo} busy={busy}/>}
     {w.id==='sections'&&<SectionsPanel sections={sections} onDetect={onDetectSections} onUpdate={onUpdateSection} onRemove={onRemoveSection} onAdd={onAddSection} tracks={tracks} busy={busy} onJump={onJump}/>}
