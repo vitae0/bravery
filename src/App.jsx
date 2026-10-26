@@ -903,6 +903,7 @@ function App() {
                 <div className="track-head ruler-label"><span>TRACKS</span></div>
                 <div className="ruler" style={{width:timelineWidth}} onPointerDown={e=>seek((e.clientX-e.currentTarget.getBoundingClientRect().left)/zoom)}>
                   {songSections.map(section=><div key={section.id} className="section-overlay" title={section.name} style={{left:section.start*zoom,width:Math.max(3,(section.end-section.start)*zoom),background:section.color,borderColor:section.color}}/>)}
+                  {tempoRegions.map(region=><div key={region.id} className="tempo-ruler-region" title={'Local tempo '+region.bpm+' BPM'} style={{left:region.start*zoom,width:Math.max(3,(region.end-region.start)*zoom)}}><span>{region.bpm} BPM</span></div>)}
                   {rulerMarks.map(sec=><div key={sec} className="tick" style={{left:sec*zoom}}><span>{formatTime(sec).split('.')[0]}</span></div>)}
                 </div>
               </div>
@@ -917,7 +918,11 @@ function App() {
                   <div className="track-bottom"><span>#{String(index+1).padStart(2,'0')}</span><span>{track.clips.length} clips</span></div>
                 </div>
                 <div className="clip-lane" style={{width:timelineWidth}} onDoubleClick={e=>{const x=e.clientX-e.currentTarget.getBoundingClientRect().left;seek(x/zoom);}}>
-                  <div className="beat-grid" style={{backgroundSize:(zoom*60/bpm)+'px 100%'}}/>
+                  {!tempoRegions.length&&<div className="beat-grid" style={{backgroundSize:(zoom*60/bpm)+'px 100%'}}/>}
+                  {tempoRegions.map(region=><div key={region.id} className="tempo-beat-region" style={{
+                    left:region.start*zoom,width:Math.max(2,(region.end-region.start)*zoom),
+                    backgroundSize:(zoom*60/(region.bpm||bpm))+'px 100%'
+                  }}/>)}
                   {songSections.map(section=><div key={section.id} className="section-overlay" title={section.name} style={{left:section.start*zoom,width:Math.max(3,(section.end-section.start)*zoom),background:section.color,borderColor:section.color}}/>)}
                   {track.clips.map(clip=>{
                     const selected=selection?.clipId===clip.id&&selection?.trackId===track.id;
