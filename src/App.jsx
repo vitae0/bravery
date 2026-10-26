@@ -725,9 +725,12 @@ function App() {
   const step=zoom>=140?1:zoom>=70?2:5;
   for(let sec=0;sec<=end;sec+=step)rulerMarks.push(sec);
 
-  return <div className="app-shell" onDragOver={e=>e.preventDefault()} onDrop={onRootDrop}>
+  return <div className="app-shell" onDragOver={e=>e.preventDefault()} onDrop={onRootDrop} onPointerDown={e=>{if(context&&!e.target.closest('.clip-context'))setContext(null);}}>
     <header className="topbar">
       <div className="brand"><span className="brand-icon"><AudioLines size={21} strokeWidth={2.7}/></span><span>bravery<span className="brand-period">.</span></span></div>
+      <ViewMenu onOpen={openWindow} remixOpen={remixOpen} setRemixOpen={setRemixOpen}
+        onImport={()=>audioInput.current?.click()} onExport={doExport} onSave={saveProject}
+        onUndo={undo} onRedo={redo} onShortcut={()=>setShortcutOpen(true)}/>
       <div className="topbar-divider" />
       <div className="project-area">
         <input className="project-title" aria-label="Project name" value={projectName} onChange={e=>setProjectName(e.target.value)} />
@@ -757,7 +760,9 @@ function App() {
         </div>
         <div className="library-scroll">
           <div className="list-heading"><span>{category==='All'?'EXPLORE '+(libraryTab==='effects'?'EFFECTS':'SOUNDS'):category.toUpperCase()}</span><span>{filtered.length}</span></div>
-          {filtered.length?filtered.map(item=><button key={item.id} className="effect-card" title={item.detail} disabled={busy} onClick={()=>libraryTab==='effects'?apply(item):addSound(item.id)}>
+          {filtered.length?filtered.map(item=><button key={item.id} className="effect-card" title={item.detail+' • Right-click to configure'} disabled={busy}
+            onContextMenu={e=>contextEffect(e,item,libraryTab==='effects'?'effect':'sound')}
+            onClick={()=>libraryTab==='effects'?apply(item):addSound(item.id)}>
             <span className={'effect-symbol '+(libraryTab==='sounds'?'sound-symbol':'')}>{libraryTab==='effects'?<WandSparkles size={17}/>:<Zap size={17}/>}</span>
             <span className="effect-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>
             <span className="effect-add"><Plus size={16}/></span>
@@ -782,6 +787,8 @@ function App() {
           <div className="tool-section options">
             <button title="Snap clips to sixteenth-note grid" className={'snap-toggle '+(snap?'enabled':'')} onClick={()=>setSnap(v=>!v)}><Magnet size={15}/> Snap</button>
             <div className="bpm-box"><span>BPM</span><input aria-label="Project BPM" type="number" min="40" max="240" value={bpm} onChange={e=>setBpm(clamp(Number(e.target.value)||40,40,240))}/></div>
+            <button className="header-auto-bpm" disabled={busy||!duration} title="Analyze BPM and tempo changes" onClick={autoTempo}>Auto BPM</button>
+            <button className="remix-open-button" title="Open Remix Lab" onClick={()=>setRemixOpen(v=>!v)}><Zap size={15}/> Remix</button>
             <div className="toolbar-sep"/>
             <IconButton title="Zoom out" onClick={()=>setZoom(v=>Math.max(30,v-15))}><Minus size={17}/></IconButton>
             <span className="zoom-text">{Math.round(zoom/75*100)}%</span>
@@ -805,12 +812,13 @@ function App() {
         </div>
 
         <section className="timeline-section">
-          <div className="section-title"><div><Layers size={17}/><h3>Timeline</h3><span className="track-counter">{tracks.length} tracks</span></div><span className="timeline-hint">Drag clips to move · Drag edges to trim · S to split</span></div>
-          <div className="timeline-scroll">
+          <div className="section-title"><div><Layers size={17}/><h3>Timeline</h3><span className="track-counter">{tracks.length} tracks</span></div><span className="timeline-hint">Wheel over track = zoom · Right-click clip = edit · Drag edges = trim</span></div>
+          <div className="timeline-scroll" onWheel={onTrackWheel}>
             <div className="timeline-content" style={{width:timelineWidth+210}}>
               <div className="ruler-row">
                 <div className="track-head ruler-label"><span>TRACKS</span></div>
                 <div className="ruler" style={{width:timelineWidth}} onPointerDown={e=>seek((e.clientX-e.currentTarget.getBoundingClientRect().left)/zoom)}>
+                  {songSections.map(section=><div key={section.id} className="section-overlay" title={section.name} style={{left:section.start*zoom,width:Math.max(3,(section.end-section.start)*zoom),background:section.color,borderColor:section.color}}/>)}
                   {rulerMarks.map(sec=><div key={sec} className="tick" style={{left:sec*zoom}}><span>{formatTime(sec).split('.')[0]}</span></div>)}
                 </div>
               </div>
@@ -826,6 +834,7 @@ function App() {
                 </div>
                 <div className="clip-lane" style={{width:timelineWidth}} onDoubleClick={e=>{const x=e.clientX-e.currentTarget.getBoundingClientRect().left;seek(x/zoom);}}>
                   <div className="beat-grid" style={{backgroundSize:(zoom*60/bpm)+'px 100%'}}/>
+                  {songSections.map(section=><div key={section.id} className="section-overlay" title={section.name} style={{left:section.start*zoom,width:Math.max(3,(section.end-section.start)*zoom),background:section.color,borderColor:section.color}}/>)}
                   {track.clips.map(clip=>{
                     const selected=selection?.clipId===clip.id&&selection?.trackId===track.id;
                     const width=Math.max(9,clip.duration*zoom);
@@ -834,7 +843,7 @@ function App() {
                       className={'clip '+(selected?'clip-selected ':'')+(track.muted?'clip-muted':'')}
                       style={{left:clip.start*zoom,width,backgroundColor:track.color+'22',borderColor:selected?'#f7efff':track.color+'99'}}
                       onPointerDown={e=>beginDrag(e,track.id,clip,'move')}
-                      onClick={()=>setSelection({trackId:track.id,clipId:clip.id})}>
+                      onClick={()=>onSelectClip(track.id,clip.id)} onContextMenu={e=>contextClip(e,track.id,clip.id)}>
                       <Waveform clip={clip} width={width} color={track.color} selected={selected}/>
                       <div className="clip-name"><Music2 size={12}/><span>{clip.name}</span></div>
                       <div className="clip-handle left" title="Trim beginning" onPointerDown={e=>beginDrag(e,track.id,clip,'left')}/>
@@ -861,10 +870,39 @@ function App() {
           <div className="status-cards"><span><span className="status-dot"/> Web Audio engine</span><span>44.1 kHz export</span><span>On-device</span></div>
         </div>
       </main>
+      {remixOpen&&<RemixDock tracks={tracks} clipSelection={selection} playhead={playhead} bpm={bpm}
+        regions={tempoRegions} sections={songSections} busy={busy} onRemix={remixLayer} onPeriodic={applyPeriodic}
+        onOpen={openWindow} onClose={()=>setRemixOpen(false)}/>}
     </div>
-
+    <WindowLayer windows={openWindows} onClose={closeWindow} onFocus={focusWindow} onOpen={openWindow}
+      onOpenRemix={()=>setRemixOpen(true)}
+      tracks={tracks} bpm={bpm} setBpm={setBpm} activeClip={activeClip} regions={tempoRegions}
+      sections={songSections} busy={busy} settings={studioSettings} onSettings={onSettings}
+      onTrackEdit={modifyTrack} onGeneratePiano={addPiano}
+      onAnalyzeTempo={autoTempo} onUpdateTempo={(id,changes)=>setTempoRegions(old=>old.map(r=>r.id===id?{...r,...changes}:r))}
+      onAddTempo={addTempoRegion} onRemoveTempo={id=>setTempoRegions(old=>old.filter(r=>r.id!==id))}
+      onDetectSections={detectSections} onUpdateSection={(id,changes)=>setSongSections(old=>old.map(r=>r.id===id?{...r,...changes}:r))}
+      onAddSection={addSection} onRemoveSection={id=>setSongSections(old=>old.filter(r=>r.id!==id))} onJump={seek}
+      onMaster={bassMaster} onDenoise={denoise} onSoundEdit={editSound} onEffect={applyStrength}/>
     <input ref={audioInput} type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" multiple hidden onChange={e=>{importAudio(e.target.files);e.target.value='';}}/>
     <input ref={projectInput} type="file" accept=".bravery" hidden onChange={e=>{loadProject(e.target.files[0]);e.target.value='';}}/>
+    {context&&<div className="clip-context" style={{left:context.x,top:context.y}} onContextMenu={e=>e.preventDefault()}>
+      <div className="context-head">{context.type==='clip'?'CLIP EDITOR':context.type==='effect'?'EFFECT CONFIGURATION':'SAMPLE OPTIONS'}</div>
+      {context.type==='clip'?<>
+        <button onClick={()=>{setContext(null);openWindow('sound');}}><Settings2 size={15}/> Edit clip (gain, fade, trim)</button>
+        <button onClick={()=>{setContext(null);openWindow('effects');}}><SlidersHorizontal size={15}/> Advanced effect controls</button>
+        <button onClick={()=>{setContext(null);splitAtCursor();}}><Scissors size={15}/> Split at cursor</button>
+        <button onClick={()=>{setContext(null);duplicate();}}><Copy size={15}/> Duplicate sound</button>
+        <button onClick={()=>{setContext(null);applyStrength(EFFECTS.find(x=>x.id==='reverse'),1);}}><RotateCcw size={15}/> Reverse</button>
+        <button onClick={()=>{setContext(null);deleteSelection();}}><Trash2 size={15}/> Delete</button>
+      </>:<>
+        <div className="context-note">{(context.type==='effect'?EFFECTS:SOUNDS).find(e=>e.id===context.id)?.name}</div>
+        <label className="parameter"><span><strong>{context.type==='effect'?'Effect intensity':'Sample gain'}</strong><small>{contextStrength.toFixed(2)}×</small></span>
+          <input type="range" min=".05" max="2" step=".05" value={contextStrength} onChange={e=>setContextStrength(Number(e.target.value))}/></label>
+        <button onClick={()=>{if(context.type==='effect')applyStrength(EFFECTS.find(e=>e.id===context.id),contextStrength);else addSound(context.id);setContext(null);}}><Plus size={15}/> {context.type==='effect'?'Apply with intensity':'Add sound to track'}</button>
+        <button onClick={()=>{setContext(null);openWindow(context.type==='effect'?'effects':'sound');}}><Settings2 size={15}/> Open advanced editor</button>
+      </>}
+    </div>}
     {busy&&<div className="busy-layer"><div className="spinner"/><span>Processing audio in your browser...</span></div>}
     {toast&&<div className="toast"><span>{toast}</span><IconButton title="Dismiss" onClick={()=>setToast('')}><X size={16}/></IconButton></div>}
     {shortcutOpen&&<div className="modal-backdrop" onClick={()=>setShortcutOpen(false)}>
