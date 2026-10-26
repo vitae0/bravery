@@ -11,7 +11,7 @@ import { CATEGORIES, EFFECTS, SOUNDS } from './catalog.js';
 import { ViewMenu, RemixDock, WindowLayer } from './StudioWindows.jsx';
 import {
   analyzeTempo, suggestSections, reduceNoise, masterBass, synthPiano,
-  timelineBeats, periodicProcess
+  timelineBeats, periodicProcess, designSound, buildDrumEvents
 } from './studio.js';
 import './studio.css';
 import {
@@ -88,6 +88,7 @@ function App() {
   const [openWindows,setOpenWindows]=useState([]);
   const [context,setContext]=useState(null);
   const [contextStrength,setContextStrength]=useState(1);
+  const [selectedSoundId,setSelectedSoundId]=useState('hard-kick');
   const [studioSettings,setStudioSettings]=useState({snapToGrid:true,autoOpenEditor:false,confirmDestructive:false});
   const [snap,setSnap]=useState(true);
   const [zoom,setZoom]=useState(75);
@@ -311,16 +312,22 @@ function App() {
     setSelection({trackId:track.id,clipId:null});
   },[commit]);
 
-  const addSound=useCallback(id=>{
+  const addSound=useCallback((id,intensity=1)=>{
     stopPlayback();
     const item=SOUNDS.find(s=>s.id===id);
-    const buffer=generateSound(id);
+    const original=generateSound(id);
+    const buffer=makeBuffer(original.numberOfChannels,original.length,original.sampleRate);
+    for(let c=0;c<buffer.numberOfChannels;c++){
+      const src=original.getChannelData(c),dst=buffer.getChannelData(c);
+      for(let i=0;i<dst.length;i++)dst[i]=clamp(src[i]*intensity,-1,1);
+    }
     const start=quantize(playheadRef.current);
     const track=initialTrack(item.name,COLORS[tracksRef.current.length%COLORS.length]);
     const clip=clipFrom(item.name,buffer,start);
     track.clips=[clip];
     commit(old=>[...old,track]);
     setSelection({trackId:track.id,clipId:clip.id});
+    setSelectedSoundId(id);
     notify(item.name+' added.');
   },[commit,notify,quantize,stopPlayback]);
 
@@ -598,6 +605,46 @@ function App() {
     setSongSections(old=>[...old,{id:uid(),name:'New section',start,end,color:'#aa84eb'}].sort((a,b)=>a.start-b.start));
   },[]);
 
+  const addDesignedSound=useCallback((id,parameters)=>{
+    try{
+      const buffer=designSound(id,parameters);
+      const track=initialTrack('Designer · '+(SOUNDS.find(x=>x.id===id)?.name||id),COLORS[tracksRef.current.length%COLORS.length]);
+      const newClip=clipFrom(track.name,buffer,quantize(playheadRef.current));
+      track.clips=[newClip];commit(old=>[...old,track]);
+      setSelection({trackId:track.id,clipId:newClip.id});
+      notify('Designed sound added at playhead.');
+    }catch(err){notify('Sound Designer: '+err.message);}
+  },[commit,notify,quantize]);
+
+  const previewDesignedSound=useCallback(async(id,parameters)=>{
+    try{
+      const ctx=await getAudioContext();
+      const src=ctx.createBufferSource();src.buffer=designSound(id,parameters);
+      src.connect(ctx.destination);src.start();
+    }catch(err){notify('Preview failed: '+err.message);}
+  },[getAudioContext,notify]);
+
+  const addDrumPattern=useCallback((pattern,settings)=>{
+    const events=buildDrumEvents(pattern,{...settings,start:quantize(playheadRef.current)});
+    if(events.length>1500){notify('Pattern is too large. Reduce the bar count.');return;}
+    const track=initialTrack('Drum machine · '+settings.bpm+' BPM','#d09af0');
+    const bySound=new Map();
+    track.clips=events.map(({time,id,level})=>{
+      if(!bySound.has(id))bySound.set(id,generateSound(id));
+      const base=bySound.get(id);
+      const buffer=makeBuffer(base.numberOfChannels,base.length,base.sampleRate);
+      for(let c=0;c<buffer.numberOfChannels;c++){
+        const input=base.getChannelData(c),out=buffer.getChannelData(c);
+        for(let i=0;i<out.length;i++)out[i]=clamp(input[i]*level,-1,1);
+      }
+      return clipFrom(id,buffer,time);
+    });
+    if(!track.clips.length){notify('Draw at least one drum note.');return;}
+    commit(old=>[...old,track]);
+    setSelection({trackId:track.id,clipId:track.clips[0].id});
+    notify('Inserted '+events.length+' notes from the drum sequencer.');
+  },[commit,notify,quantize]);
+
   const addPiano=useCallback((notes,settings)=>{
     const buffer=synthPiano(notes,settings);
     const track=initialTrack(settings.instrument+' · piano roll',COLORS[tracksRef.current.length%COLORS.length]);
@@ -642,6 +689,7 @@ function App() {
   const contextEffect=useCallback((event,item,type='effect')=>{
     event.preventDefault();event.stopPropagation();
     setContextStrength(1);
+    if(type==='sound')setSelectedSoundId(item.id);
     setContext({type,id:item.id,x:Math.min(event.clientX,innerWidth-250),y:Math.min(event.clientY,innerHeight-310)});
   },[]);
   const onSelectClip=useCallback((trackId,clipId)=>{
@@ -886,7 +934,9 @@ function App() {
       onAddTempo={addTempoRegion} onRemoveTempo={id=>setTempoRegions(old=>old.filter(r=>r.id!==id))}
       onDetectSections={detectSections} onUpdateSection={(id,changes)=>setSongSections(old=>old.map(r=>r.id===id?{...r,...changes}:r))}
       onAddSection={addSection} onRemoveSection={id=>setSongSections(old=>old.filter(r=>r.id!==id))} onJump={seek}
-      onMaster={bassMaster} onDenoise={denoise} onSoundEdit={editSound} onEffect={applyStrength}/>
+      onMaster={bassMaster} onDenoise={denoise} onSoundEdit={editSound} onEffect={applyStrength}
+      soundId={selectedSoundId} onChangeSound={setSelectedSoundId} onDesignedSound={addDesignedSound}
+      onSoundPreview={previewDesignedSound} onDrums={addDrumPattern}/>
     <input ref={audioInput} type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" multiple hidden onChange={e=>{importAudio(e.target.files);e.target.value='';}}/>
     <input ref={projectInput} type="file" accept=".bravery" hidden onChange={e=>{loadProject(e.target.files[0]);e.target.value='';}}/>
     {context&&<div className="clip-context" style={{left:context.x,top:context.y}} onContextMenu={e=>e.preventDefault()}>
@@ -902,8 +952,8 @@ function App() {
         <div className="context-note">{(context.type==='effect'?EFFECTS:SOUNDS).find(e=>e.id===context.id)?.name}</div>
         <label className="parameter"><span><strong>{context.type==='effect'?'Effect intensity':'Sample gain'}</strong><small>{contextStrength.toFixed(2)}×</small></span>
           <input type="range" min=".05" max="2" step=".05" value={contextStrength} onChange={e=>setContextStrength(Number(e.target.value))}/></label>
-        <button onClick={()=>{if(context.type==='effect')applyStrength(EFFECTS.find(e=>e.id===context.id),contextStrength);else addSound(context.id);setContext(null);}}><Plus size={15}/> {context.type==='effect'?'Apply with intensity':'Add sound to track'}</button>
-        <button onClick={()=>{setContext(null);openWindow(context.type==='effect'?'effects':'sound');}}><Settings2 size={15}/> Open advanced editor</button>
+        <button onClick={()=>{if(context.type==='effect')applyStrength(EFFECTS.find(e=>e.id===context.id),contextStrength);else addSound(context.id,contextStrength);setContext(null);}}><Plus size={15}/> {context.type==='effect'?'Apply with intensity':'Add sound to track'}</button>
+        <button onClick={()=>{setContext(null);openWindow(context.type==='effect'?'effects':'designer');}}><Settings2 size={15}/> Open advanced editor</button>
       </>}
     </div>}
     {busy&&<div className="busy-layer"><div className="spinner"/><span>Processing audio in your browser...</span></div>}
