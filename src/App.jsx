@@ -10,7 +10,7 @@ import {
 import { CATEGORIES, EFFECTS, SOUNDS } from './catalog.js';
 import { ViewMenu, RemixDock, WindowLayer } from './StudioWindows.jsx';
 import {
-  analyzeTempo, suggestSections, reduceNoise, masterBass, synthPiano,
+  analyzeTempo, suggestSections, reduceNoise, masterBass, synthPiano, bpmAt,
   timelineBeats, periodicProcess, designSound, buildDrumEvents
 } from './studio.js';
 import './studio.css';
@@ -163,7 +163,13 @@ function App() {
     return all.reduce((best,c)=>!best||c.duration>best.duration?c:best,null);
   },[]);
   const snapSeconds=60/Math.max(40,bpm)/4;
-  const quantize=useCallback(t=>snap?Math.round(t/snapSeconds)*snapSeconds:t,[snap,snapSeconds]);
+  const quantize=useCallback(t=>{
+    if(!snap)return t;
+    const region=tempoRegions.find(r=>t>=r.start&&t<r.end);
+    if(!region)return Math.round(t/snapSeconds)*snapSeconds;
+    const unit=60/(region.bpm||bpm)/4;
+    return Math.max(0,region.start+Math.round((t-region.start)/unit)*unit);
+  },[snap,snapSeconds,tempoRegions,bpm]);
 
   const stopPlayback=useCallback((reset=false)=>{
     const current=playbackRef.current;
@@ -629,15 +635,20 @@ function App() {
     if(events.length>1500){notify('Pattern is too large. Reduce the bar count.');return;}
     const track=initialTrack('Drum machine · '+settings.bpm+' BPM','#d09af0');
     const bySound=new Map();
+    const byGain=new Map();
     track.clips=events.map(({time,id,level})=>{
       if(!bySound.has(id))bySound.set(id,generateSound(id));
-      const base=bySound.get(id);
-      const buffer=makeBuffer(base.numberOfChannels,base.length,base.sampleRate);
-      for(let c=0;c<buffer.numberOfChannels;c++){
-        const input=base.getChannelData(c),out=buffer.getChannelData(c);
-        for(let i=0;i<out.length;i++)out[i]=clamp(input[i]*level,-1,1);
+      const gainKey=id+'-'+(Math.round(level*20)/20).toFixed(2);
+      if(!byGain.has(gainKey)){
+        const base=bySound.get(id);
+        const buffer=makeBuffer(base.numberOfChannels,base.length,base.sampleRate);
+        for(let c=0;c<buffer.numberOfChannels;c++){
+          const input=base.getChannelData(c),out=buffer.getChannelData(c);
+          for(let i=0;i<out.length;i++)out[i]=clamp(input[i]*level,-1,1);
+        }
+        byGain.set(gainKey,buffer);
       }
-      return clipFrom(id,buffer,time);
+      return clipFrom(id,byGain.get(gainKey),time);
     });
     if(!track.clips.length){notify('Draw at least one drum note.');return;}
     commit(old=>[...old,track]);
