@@ -81,12 +81,17 @@ export function RemixDock({tracks,clipSelection,playhead,bpm,regions,sections,bu
   const [mix,setMix]=useState(.75);
   const [humanize,setHumanize]=useState(0);
   const [pattern,setPattern]=useState('every');
+  const [alignMode,setAlignMode]=useState('spikes');
+  const [alignTolerance,setAlignTolerance]=useState(125);
+  const [alignStrength,setAlignStrength]=useState(1);
+  const [referenceTrackId,setReferenceTrackId]=useState('auto');
   const selectedTrack=tracks.find(t=>t.id===clipSelection?.trackId);
   const chosenClip=selectedTrack?.clips.find(c=>c.id===clipSelection?.clipId);
   const effectDef=EFFECTS.find(e=>e.id===effect);
   const makeConfig=()=>({
     tool,every,offset,source,customBpm,bpm,intensity,swing,start,finish,
-    effect:effectDef,width,mix,humanize,pattern,regions
+    effect:effectDef,width,mix,humanize,pattern,regions,
+    alignMode,alignTolerance,alignStrength,referenceTrackId
   });
   return <aside className="remix-dock">
     <div className="dock-head"><div><span className="dock-eyebrow">PRODUCTION TOOLS</span><h2><Zap size={18}/> Remix Lab</h2></div><button title="Close remix panel" onClick={onClose}><X size={17}/></button></div>
@@ -115,6 +120,20 @@ export function RemixDock({tracks,clipSelection,playhead,bpm,regions,sections,bu
         <Parameter label="Beat offset" value={offset} min={0} max={16} onChange={setOffset}/>
         <Parameter label="Swing" value={swing} min={0} max={70} unit="%" onChange={setSwing}/>
         <Parameter label="Humanize" value={humanize} min={0} max={35} unit="ms" onChange={setHumanize}/>
+      </div>
+      <div className="dock-section">
+        <div className="dock-section-title"><span>BEAT / TRANSIENT ALIGNMENT</span><span className="dock-count">◎</span></div>
+        <Select label="Placement" value={alignMode} onChange={setAlignMode}
+          options={[{value:'spikes',label:'Auto · waveform spikes'}, {value:'grid',label:'Strict BPM grid'}]}/>
+        {alignMode==='spikes'&&<>
+          <Select label="Analyze track" value={referenceTrackId} onChange={setReferenceTrackId} options={[
+            {value:'auto',label:'Auto · longest song clip'},
+            ...tracks.filter(t=>t.clips.some(c=>c.duration>=2)).map(t=>({value:t.id,label:t.name}))
+          ]}/>
+          <Parameter label="Peak search radius" value={alignTolerance} min={25} max={200} step={5} unit="ms" onChange={setAlignTolerance}/>
+          <Parameter label="Snap strength" value={alignStrength} min={0} max={1} step={.05} unit="×" onChange={setAlignStrength}/>
+          <p className="panel-hint">Calibrates the beat's phase to detected attacks, then snaps each placement to a nearby waveform spike. BPM stays unchanged and audio clips are not split.</p>
+        </>}
       </div>
       <div className="dock-section">
         <div className="dock-section-title"><span>CHARACTER</span><span className="dock-count">03</span></div>
