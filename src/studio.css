@@ -167,3 +167,5 @@
 .automation-editor{padding:10px 14px;border:1px solid #634b71;background:#332839;border-radius:9px;margin:12px 0}
 .automation-editor>strong{font-size:12px;color:#e2c2fa}
 .track-automation-curve{height:110px;position:absolute;left:0;top:0;pointer-events:none;z-index:7;filter:drop-shadow(0 0 2px #a97762a5)}
+
+.section-ruler-title{position:absolute;left:4px;top:2px;background:#26202ee0;border:1px solid #aa86bc;border-radius:3px;color:#f3dbff;font-size:9px;font-weight:800;max-width:calc(100% - 9px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:2px 5px}
