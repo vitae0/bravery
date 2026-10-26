@@ -474,6 +474,178 @@ function App() {
     live(previous.map(t=>t.id===id?{...t,...changes}:t));
   },[live]);
 
+  const replaceClipBuffer=useCallback((target,buffer)=>{
+    if(!target)return;
+    const next={...target,buffer,offset:0,duration:buffer.duration};
+    commit(before=>before.map(track=>({...track,clips:track.clips.map(c=>c.id===target.id?next:c)})));
+  },[commit]);
+
+  const withStrength=useCallback((effect,strength=1)=>{
+    const config={...effect.config};
+    const k=effect.kind;
+    if(k==='filter' && typeof config.gain==='number')config.gain*=strength;
+    else if(k==='filter' && typeof config.frequency==='number')config.frequency*=Math.pow(1.28,strength-1);
+    if(['reverb','delay','chorus'].includes(k)&&config.wet!==undefined)config.wet=clamp(config.wet*strength,0,1);
+    if(k==='distortion'&&config.drive)config.drive=Math.max(.5,config.drive*strength);
+    if(k==='compressor'&&config.threshold)config.threshold=clamp(config.threshold*strength,-90,0);
+    if(k==='gain'&&config.db)config.db=clamp(config.db*strength,-50,36);
+    if(k==='tremolo'&&config.depth)config.depth=clamp(config.depth*strength,0,1);
+    if(k==='pitch'&&config.semitones)config.semitones=clamp(config.semitones*strength,-24,24);
+    if(k==='speed'&&config.speed)config.speed=1+(config.speed-1)*strength;
+    if(k==='bitcrush'&&config.bits)config.bits=Math.max(2,Math.round(16-(16-config.bits)*strength));
+    return {...effect,config};
+  },[]);
+
+  const processClip=useCallback(async(processor,label)=>{
+    if(!activeClip){notify('Select a clip first.');return;}
+    if(studioSettings.confirmDestructive&&!window.confirm('Apply "'+label+'" to this clip? Undo can restore it.'))return;
+    const target=activeClip;
+    stopPlayback();
+    setBusy(true);
+    try{
+      const rendered=await processor(target);
+      if(!rendered)throw new Error('No processed audio was generated.');
+      replaceClipBuffer(target,rendered);
+      notify(label+' applied. Ctrl+Z to undo.');
+    }catch(err){notify(label+': '+err.message);}
+    finally{setBusy(false);}
+  },[activeClip,studioSettings.confirmDestructive,stopPlayback,replaceClipBuffer,notify]);
+
+  const applyStrength=useCallback((effect,intensity=1)=>{
+    if(!effect)return;
+    processClip(c=>applyEffect(c,withStrength(effect,intensity)),effect.name);
+  },[processClip,withStrength]);
+
+  const remixLayer=useCallback(config=>{
+    const {tool,every,source,customBpm,offset,intensity,swing,humanize,pattern,regions}=config;
+    const duration=durationOf(tracksRef.current);
+    const start=clamp(config.start||0,0,Math.max(duration,1));
+    const finish=config.finish>start ? Math.min(config.finish,duration) : duration;
+    if(finish<=start){notify('Import a song before generating a beat layer.');return;}
+    let events=timelineBeats(start,finish,{source,customBpm,bpm,regions,every,offset});
+    if(pattern==='offbeat')events=events.map(e=>({...e,time:e.time+60/(e.bpm||bpm)/2})).filter(e=>e.time<finish);
+    if(pattern==='alternating')events=events.filter((e,i)=>i%2===0);
+    if(!events.length){notify('No beats fall in this interval. Check the start/end settings.');return;}
+    const original=generateSound(tool);
+    const amplified=makeBuffer(original.numberOfChannels,original.length,original.sampleRate);
+    for(let c=0;c<amplified.numberOfChannels;c++){
+      const src=original.getChannelData(c),dst=amplified.getChannelData(c);
+      for(let i=0;i<dst.length;i++)dst[i]=clamp(src[i]*intensity,-1,1);
+    }
+    const layer=initialTrack(SOUNDS.find(s=>s.id===tool)?.name+' · every '+every+' beats','#ffb18e');
+    const beat=60/Math.max(40,source==='custom'?customBpm:bpm);
+    layer.clips=events.map((e,i)=>{
+      const swung=(i%2===1 ? swing/100*beat/2 : 0);
+      const human=humanize?Math.sin(i*731.31+25)*humanize/1000:0;
+      return clipFrom(SOUNDS.find(s=>s.id===tool)?.name||'Sample',amplified,Math.max(0,e.time+swung+human));
+    });
+    stopPlayback();
+    commit(before=>[...before,layer]);
+    setSelection({trackId:layer.id,clipId:layer.clips[0].id});
+    notify('Created '+layer.clips.length+' rhythmic events at '+every+'-beat intervals.');
+  },[bpm,commit,notify,stopPlayback]);
+
+  const applyPeriodic=useCallback(async config=>{
+    const effect=config.effect;
+    if(!effect||!activeClip){notify('Select a clip and effect first.');return;}
+    const target=activeClip;
+    const start=Math.max(target.start,config.start||0);
+    const finish=Math.min(target.start+target.duration,config.finish>start?config.finish:target.start+target.duration);
+    const events=timelineBeats(start,finish,{source:config.source,customBpm:config.customBpm,bpm,regions:tempoRegions,every:config.every,offset:config.offset});
+    if(!events.length){notify('No periodic events in the selected clip.');return;}
+    await processClip(c=>periodicProcess(c,withStrength(effect,config.intensity),events,{widthBeats:config.width,mix:config.mix,intensity:1,bpm}),'Periodic '+effect.name);
+  },[activeClip,bpm,tempoRegions,notify,processClip,withStrength]);
+
+  const autoTempo=useCallback(async()=>{
+    const candidate=activeClip||selectedPrimaryClip();
+    if(!candidate){notify('Add a song to analyze its BPM.');return;}
+    setBusy(true);
+    try{
+      const result=await analyzeTempo(slicedClip(candidate));
+      setBpm(Math.round(result.bpm));
+      const extended=result.regions.map((r,i,arr)=>({
+        ...r,id:uid(),start:r.start+candidate.start,
+        end:i===arr.length-1?candidate.start+candidate.duration:r.end+candidate.start
+      }));
+      setTempoRegions(extended);
+      notify('Detected '+result.bpm+' BPM with '+extended.length+' tempo region(s). Check the tempo map for corrections.');
+      openWindow('tempo');
+    }catch(err){notify('BPM detection failed: '+err.message);}
+    finally{setBusy(false);}
+  },[activeClip,notify,openWindow,selectedPrimaryClip]);
+
+  const detectSections=useCallback(()=>{
+    const candidate=activeClip||selectedPrimaryClip();
+    if(!candidate){notify('Import music before detecting sections.');return;}
+    setBusy(true);
+    try{
+      const sections=suggestSections(slicedClip(candidate));
+      setSongSections(sections.map(s=>({...s,id:uid(),start:s.start+candidate.start,end:s.end+candidate.start})));
+      notify('Created '+sections.length+' arrangement markers. Rename verse/chorus guesses as needed.');
+    }catch(err){notify('Section analysis: '+err.message);}
+    finally{setBusy(false);}
+  },[activeClip,notify,selectedPrimaryClip]);
+
+  const addTempoRegion=useCallback(()=>{
+    const start=playheadRef.current,end=Math.max(start+4,durationOf(tracksRef.current));
+    setTempoRegions(old=>[...old,{id:uid(),start,end,bpm}].sort((a,b)=>a.start-b.start));
+  },[bpm]);
+  const addSection=useCallback(()=>{
+    const start=playheadRef.current,end=Math.max(start+4,durationOf(tracksRef.current));
+    setSongSections(old=>[...old,{id:uid(),name:'New section',start,end,color:'#aa84eb'}].sort((a,b)=>a.start-b.start));
+  },[]);
+
+  const addPiano=useCallback((notes,settings)=>{
+    const buffer=synthPiano(notes,settings);
+    const track=initialTrack(settings.instrument+' · piano roll',COLORS[tracksRef.current.length%COLORS.length]);
+    const newClip=clipFrom('Piano pattern',buffer,Math.max(0,playheadRef.current));
+    track.clips=[newClip];
+    commit(old=>[...old,track]);
+    setSelection({trackId:track.id,clipId:newClip.id});
+    notify('Synthesized '+notes.length+' MIDI notes into an editable audio track.');
+  },[commit,notify]);
+
+  const bassMaster=useCallback(settings=>processClip(c=>masterBass(slicedClip(c),settings),'Bass Master'),[processClip]);
+  const denoise=useCallback(settings=>processClip(c=>reduceNoise(slicedClip(c),settings),'Spectral Noise Reduction'),[processClip]);
+
+  const editSound=useCallback(settings=>processClip(async target=>{
+    const {gain,speed,fadeIn,fadeOut,reverse,normalize,trimStart,trimEnd}=settings;
+    const length=target.duration;
+    const trimA=clamp(trimStart,0,Math.max(0,length-.1));
+    const trimB=clamp(trimEnd,0,Math.max(0,length-trimA-.1));
+    const segment={...target,offset:target.offset+trimA,duration:length-trimA-trimB};
+    let rendered=slicedClip(segment);
+    if(normalize)rendered=await applyEffect({buffer:rendered,offset:0,duration:rendered.duration},EFFECTS.find(x=>x.id==='normalize'));
+    if(Math.abs(speed-1)>.01)rendered=await applyEffect({buffer:rendered,offset:0,duration:rendered.duration}, {kind:'speed',config:{speed}});
+    if(reverse)rendered=await applyEffect({buffer:rendered,offset:0,duration:rendered.duration},EFFECTS.find(x=>x.id==='reverse'));
+    const amp=Math.pow(10,gain/20),rate=rendered.sampleRate;
+    const fadeInSamples=Math.min(rendered.length,fadeIn*rate),fadeOutSamples=Math.min(rendered.length,fadeOut*rate);
+    for(let c=0;c<rendered.numberOfChannels;c++){
+      const a=rendered.getChannelData(c);
+      for(let i=0;i<a.length;i++){
+        const fade=Math.min(1,fadeInSamples?i/fadeInSamples:1,fadeOutSamples?(a.length-i-1)/fadeOutSamples:1);
+        a[i]=clamp(a[i]*amp*fade,-1,1);
+      }
+    }
+    return rendered;
+  },'Sound Editor'),[processClip]);
+
+  const contextClip=useCallback((event,trackId,clipId)=>{
+    event.preventDefault();
+    event.stopPropagation();
+    setSelection({trackId,clipId});
+    setContext({type:'clip',trackId,clipId,x:Math.min(event.clientX,innerWidth-240),y:Math.min(event.clientY,innerHeight-340)});
+  },[]);
+  const contextEffect=useCallback((event,item,type='effect')=>{
+    event.preventDefault();event.stopPropagation();
+    setContextStrength(1);
+    setContext({type,id:item.id,x:Math.min(event.clientX,innerWidth-250),y:Math.min(event.clientY,innerHeight-310)});
+  },[]);
+  const onSelectClip=useCallback((trackId,clipId)=>{
+    setSelection({trackId,clipId});
+    if(studioSettings.autoOpenEditor)openWindow('sound');
+  },[openWindow,studioSettings.autoOpenEditor]);
+
   const beginDrag=useCallback((event,trackId,clip,action)=>{
     if(event.button!==0||busy)return;
     event.preventDefault();event.stopPropagation();
