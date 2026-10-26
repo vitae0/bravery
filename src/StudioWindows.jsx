@@ -12,11 +12,11 @@ import { formatTime } from './audio.js';
 export const PANEL_TITLES={
   'mixer':'Mixer','piano':'Piano Roll','tempo':'Tempo Map','sections':'Song Sections',
   'bass':'Bass Lab','noise':'Noise Reduction','sound':'Sound Editor',
-  'effects':'Effects Rack','settings':'Studio Settings','recurrence':'Periodic FX','designer':'Sound Designer','drums':'Drum Machine'
+  'effects':'Effects Rack','settings':'Studio Settings','recurrence':'Periodic FX','designer':'Sound Designer','drums':'Drum Machine','automation':'Automation Clips'
 };
 export const PANEL_ICONS={
   mixer:SlidersHorizontal,piano:Piano,tempo:Activity,sections:Layers,bass:BarChart3,
-  noise:Waves,sound:Music2,effects:WandSparkles,settings:Settings2,recurrence:RefreshCw,designer:Disc3,drums:ListMusic
+  noise:Waves,sound:Music2,effects:WandSparkles,settings:Settings2,recurrence:RefreshCw,designer:Disc3,drums:ListMusic,automation:Activity
 };
 const uid=()=>crypto.randomUUID();
 const range=(n)=>Array.from({length:n},(_,i)=>i);
@@ -139,6 +139,7 @@ export function RemixDock({tracks,clipSelection,playhead,bpm,regions,sections,bu
           <button onClick={()=>onOpen('sections')}><Layers size={16}/> Sections</button>
           <button onClick={()=>onOpen('noise')}><Waves size={16}/> Denoise</button>
           <button onClick={()=>onOpen('mixer')}><SlidersHorizontal size={16}/> Mixer</button>
+          <button onClick={()=>onOpen('automation')}><Activity size={16}/> Automation</button>
         </div>
       </div>
     </div>
@@ -485,16 +486,80 @@ function SoundDesigner({soundId,onChangeSound,onAdd,onPreview,busy}){
   </div>;
 }
 
+
+function AutomationPanel({tracks,bpm,playhead,onUpdate}){
+  const [trackId,setTrackId]=useState('');
+  const [selectedPoint,setSelectedPoint]=useState(null);
+  const track=tracks.find(t=>t.id===trackId)||tracks[0];
+  const points=[...(track?.automation||[])].sort((a,b)=>a.time-b.time);
+  const end=Math.max(8,...(track?.clips||[]).map(c=>c.start+c.duration),playhead+2);
+  const graphWidth=600,graphHeight=170;
+  const display=points.length?points:[{id:'start',time:0,value:1},{id:'end',time:end,value:1}];
+  const pointById=points.find(p=>p.id===selectedPoint);
+  const commit=next=>track&&onUpdate(track.id,next.sort((a,b)=>a.time-b.time));
+  const addAt=(time,value)=>{
+    if(!track)return;
+    const point={id:uid(),time:clip(time,0,end),value:clip(value,0,2)};
+    commit([...points,point]);setSelectedPoint(point.id);
+  };
+  const clickedGraph=e=>{
+    if(!track)return;
+    const rect=e.currentTarget.getBoundingClientRect();
+    addAt((e.clientX-rect.left)/rect.width*end,(1-(e.clientY-rect.top)/rect.height)*2);
+  };
+  const updatePoint=(id,patch)=>commit(points.map(p=>p.id===id?{...p,...patch}:p));
+  const makePump=()=>{
+    const newPoints=[];
+    const beat=60/Math.max(40,bpm);
+    for(let time=0;time<end&&newPoints.length<1200;time+=beat){
+      newPoints.push({id:uid(),time,value:.25});
+      newPoints.push({id:uid(),time:Math.min(end,time+beat*.28),value:1});
+    }
+    commit(newPoints);
+  };
+  return <div className="automation-panel">
+    <div className="panel-banner"><Activity size={20}/><span><strong>Volume automation</strong><small>Draw gain envelopes. Playback and exported WAV use the same linear ramps.</small></span></div>
+    <Select label="Track" value={track?.id||''} onChange={v=>{setTrackId(v);setSelectedPoint(null);}} options={tracks.length?tracks.map(t=>({value:t.id,label:t.name})):[{value:'',label:'Import a track'}]}/>
+    <div className="automation-graph">
+      <div className="automation-axis"><span>200%</span><span>100%</span><span>0%</span></div>
+      <svg viewBox={'0 0 '+graphWidth+' '+graphHeight} preserveAspectRatio="none" onClick={clickedGraph}
+        role="img" aria-label="Click automation graph to create gain points">
+        <line x1="0" y1={graphHeight/2} x2={graphWidth} y2={graphHeight/2} stroke="#7d6c86" strokeWidth="1" strokeDasharray="4 4"/>
+        <line x1="0" y1="0" x2="0" y2={graphHeight} stroke="#6d5976"/>
+        <polyline fill="none" stroke="#dfa6fa" strokeWidth="2.5" strokeLinejoin="round"
+          points={display.map(p=>(p.time/end*graphWidth)+','+(graphHeight*(1-p.value/2))).join(' ')}/>
+        {points.map(p=><circle key={p.id} cx={p.time/end*graphWidth} cy={graphHeight*(1-p.value/2)}
+          r={selectedPoint===p.id?6:4} fill={selectedPoint===p.id?'#ffdbb7':'#e1a9f9'} stroke="#36243e" strokeWidth="2"
+          onClick={e=>{e.stopPropagation();setSelectedPoint(p.id);}}/>)}
+      </svg>
+      <div className="automation-scale"><span>0:00</span><span>{formatTime(end)}</span></div>
+    </div>
+    <div className="piano-quick">
+      <button onClick={()=>addAt(playhead,1)} disabled={!track}>Add point at playhead</button>
+      <button onClick={makePump} disabled={!track}>Generate pump envelope</button>
+      <button onClick={()=>commit([{id:uid(),time:0,value:1},{id:uid(),time:end,value:1}])} disabled={!track}>Reset to unity</button>
+    </div>
+    {pointById&&<div className="automation-editor">
+      <strong>Selected envelope point</strong>
+      <Numeric label="Time (seconds)" min={0} max={end} step={.05} value={pointById.time} onChange={v=>updatePoint(pointById.id,{time:v})}/>
+      <Parameter label="Volume multiplier" min={0} max={2} step={.02} value={pointById.value} onChange={v=>updatePoint(pointById.id,{value:v})}/>
+      <button className="text-link" onClick={()=>{commit(points.filter(p=>p.id!==pointById.id));setSelectedPoint(null);}}>Delete this envelope point</button>
+    </div>}
+    <p className="panel-hint">Automation is track-wide. Use with the Mixer fader for gain staging and rhythmic ducking. One envelope is shared across all clips on that track.</p>
+  </div>;
+}
 export function WindowLayer({windows,onClose,onFocus,tracks,bpm,setBpm,activeClip,regions,sections,
   onTrackEdit,onGeneratePiano,onAnalyzeTempo,onUpdateTempo,onAddTempo,onRemoveTempo,
   onDetectSections,onUpdateSection,onRemoveSection,onAddSection,onJump,onMaster,onDenoise,onSoundEdit,onEffect,onPreviewEffect,
-  busy,settings,onSettings,onOpen,onOpenRemix,soundId,onChangeSound,onDesignedSound,onSoundPreview,onDrums}){
+  busy,settings,onSettings,onOpen,onOpenRemix,soundId,onChangeSound,onDesignedSound,onSoundPreview,onDrums,
+  playhead,onUpdateAutomation}){
   const buffer=activeClip?.buffer;
   const positions={piano:{x:140,y:115},mixer:{x:245,y:150},tempo:{x:310,y:125},sections:{x:360,y:140},
     bass:{x:250,y:90},noise:{x:390,y:165},sound:{x:450,y:130},effects:{x:350,y:110},
-    settings:{x:490,y:140},recurrence:{x:550,y:180},designer:{x:430,y:145},drums:{x:170,y:175}};
+    settings:{x:490,y:140},recurrence:{x:550,y:180},designer:{x:430,y:145},drums:{x:170,y:175},automation:{x:190,y:170}};
   return <div className="floating-window-layer">{windows.map((w,i)=><DraggableWindow key={w.id} id={w.id} index={i} position={positions[w.id]} onClose={()=>onClose(w.id)} onFocus={()=>onFocus(w.id)}>
     {w.id==='mixer'&&<Mixer tracks={tracks} onTrackEdit={onTrackEdit}/>}
+    {w.id==='automation'&&<AutomationPanel tracks={tracks} bpm={bpm} playhead={playhead} onUpdate={onUpdateAutomation}/>}
     {w.id==='drums'&&<DrumMachine bpm={bpm} onAdd={onDrums}/>}
     {w.id==='designer'&&<SoundDesigner soundId={soundId} onChangeSound={onChangeSound} onAdd={onDesignedSound} onPreview={onSoundPreview} busy={busy}/>}
     {w.id==='piano'&&<PianoRoll bpm={bpm} onGenerate={onGeneratePiano}/>}
