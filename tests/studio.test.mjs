@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { connectMixTrack } from '../src/audio.js';
-import { bpmAt, buildDrumEvents, timelineBeats } from '../src/studio.js';
+import { bpmAt, buildDrumEvents, timelineBeats, splitClipIntoSections } from '../src/studio.js';
 import { CATEGORIES, EFFECTS, SOUNDS } from '../src/catalog.js';
 
 test('beat grid repeats one event every four beats',()=>{
@@ -78,4 +78,18 @@ test('automation ramps are scheduled for both live and offline mixers',()=>{
     gain:.8,pan:.2,automation:[{time:0,value:.25},{time:2,value:1},{time:3,value:.5}]
   },context.destination,0,0);
   assert.deepEqual(calls,[['set',.2,0],['ramp',.8,2],['ramp',.4,3]]);
+});
+
+test('structural splits preserve sample offsets and full source duration',()=>{
+  const buffer={};
+  const original={id:'original',name:'Song',buffer,start:5,offset:2,duration:12};
+  let counter=0;
+  const sections=[{start:0,end:10,name:'Verse'},{start:10,end:15,name:'Chorus'},{start:15,end:21,name:'Drop'}];
+  const pieces=splitClipIntoSections(original,sections,()=>String(++counter));
+  assert.equal(pieces.length,3);
+  assert.deepEqual(pieces.map(c=>c.start),[5,10,15]);
+  assert.deepEqual(pieces.map(c=>c.duration),[5,5,2]);
+  assert.deepEqual(pieces.map(c=>c.offset),[2,7,12]);
+  assert.ok(pieces.every(c=>c.buffer===buffer));
+  assert.ok(Math.abs(pieces.reduce((sum,c)=>sum+c.duration,0)-original.duration)<1e-8);
 });
