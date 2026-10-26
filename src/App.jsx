@@ -8,6 +8,12 @@ import {
   VolumeX, WandSparkles, X, Zap
 } from 'lucide-react';
 import { CATEGORIES, EFFECTS, SOUNDS } from './catalog.js';
+import { ViewMenu, RemixDock, WindowLayer } from './StudioWindows.jsx';
+import {
+  analyzeTempo, suggestSections, reduceNoise, masterBass, synthPiano,
+  timelineBeats, periodicProcess
+} from './studio.js';
+import './studio.css';
 import {
   applyEffect, audibleTracks, downloadBlob, durationOf, formatTime, generateSound,
   makeBuffer, renderMix, scheduleClips, slicedClip, wavBlob, MAX_RENDER_SECONDS
@@ -76,6 +82,13 @@ function App() {
   const audioCtxRef=useRef(null);
   const recorderRef=useRef(null);
   const [bpm,setBpm]=useState(150);
+  const [tempoRegions,setTempoRegions]=useState([]);
+  const [songSections,setSongSections]=useState([]);
+  const [remixOpen,setRemixOpen]=useState(true);
+  const [openWindows,setOpenWindows]=useState([]);
+  const [context,setContext]=useState(null);
+  const [contextStrength,setContextStrength]=useState(1);
+  const [studioSettings,setStudioSettings]=useState({snapToGrid:true,autoOpenEditor:false,confirmDestructive:false});
   const [snap,setSnap]=useState(true);
   const [zoom,setZoom]=useState(75);
   const [libraryTab,setLibraryTab]=useState('effects');
@@ -133,6 +146,21 @@ function App() {
   const timelineWidth=Math.max(1050,Math.round(end*zoom));
   const activeTrack=tracks.find(t=>t.id===selection?.trackId);
   const activeClip=activeTrack?.clips.find(c=>c.id===selection?.clipId);
+  const openWindow=useCallback((id)=>{
+    setOpenWindows(old=>[...old.filter(x=>x.id!==id),{id}]);
+  },[]);
+  const closeWindow=useCallback(id=>setOpenWindows(old=>old.filter(x=>x.id!==id)),[]);
+  const focusWindow=useCallback(id=>setOpenWindows(old=>[...old.filter(x=>x.id!==id),...old.filter(x=>x.id===id)]),[]);
+  const onSettings=useCallback(changes=>{
+    setStudioSettings(old=>({...old,...changes}));
+    if('snapToGrid' in changes)setSnap(changes.snapToGrid);
+  },[]);
+  const currentSongDuration=useCallback(()=>durationOf(tracksRef.current),[]);
+  const selectedPrimaryClip=useCallback(()=>{
+    const all=tracksRef.current.flatMap(t=>t.clips);
+    if(!all.length)return null;
+    return all.reduce((best,c)=>!best||c.duration>best.duration?c:best,null);
+  },[]);
   const snapSeconds=60/Math.max(40,bpm)/4;
   const quantize=useCallback(t=>snap?Math.round(t/snapSeconds)*snapSeconds:t,[snap,snapSeconds]);
 
@@ -177,6 +205,18 @@ function App() {
     }catch(err){notify('Playback failed: '+err.message);}
   },[notify,stopPlayback]);
 
+  const onTrackWheel=useCallback(event=>{
+    if(!event.target.closest('.clip-lane, .ruler, .clip'))return;
+    if(event.altKey)return;
+    event.preventDefault();
+    const scroll=event.currentTarget;
+    const rect=scroll.getBoundingClientRect();
+    const x=event.clientX-rect.left+scroll.scrollLeft-210;
+    const before=Math.max(0,x)/zoom;
+    const after=clamp(Math.round(zoom*(event.deltaY<0?1.16:1/1.16)),30,260);
+    setZoom(after);
+    requestAnimationFrame(()=>{scroll.scrollLeft=Math.max(0,before*after-(event.clientX-rect.left-210));});
+  },[zoom]);
   const pause=useCallback(()=>{
     if(!playing){playFrom(playheadRef.current);return;}
     const at=playheadRef.current;
