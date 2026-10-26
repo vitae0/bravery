@@ -6,7 +6,7 @@
 
 ## Live site
 
-**https://vitae0.github.io/bravery/**
+**Planned Pages URL:** https://vitae0.github.io/bravery/ (the URL is not live until GitHub Pages deployment succeeds)
 
 The site requires GitHub Pages to be enabled before the first deployment succeeds:
 
@@ -37,11 +37,13 @@ The workflow builds with Vite using the project-specific base path /bravery/.
 | Clip gain, basic filters, reverb, delay, modulation | Implemented |
 | Auto BPM estimation and editable per-section tempo map | Experimental onset-autocorrelation detector |
 | Automatic intro/verse/chorus change-point suggestions + arrangement markers | Experimental and heuristic, label guesses need manual review |
-| Floating View windows: Mixer, Tempo Map, Sections, Piano Roll, Drum Machine, Bass Lab, Noise Lab, FX, Sound Designer | Implemented |
+| Floating View windows: Mixer, Tempo Map, Sections, Piano Roll, Drum Machine, Bass Lab, Noise Lab, FX, Sound Designer, Automation | Implemented |
 | 16-step drum sequencer with accents, swing and pattern presets | Implemented |
 | Piano Roll: draw notes, velocity, length, 4 instruments, chord/bass/arp generators | Implemented, renders synthesized audio |
 | Right-click clip / effect / sample editing | Implemented |
 | Periodic effect processing every N beats | Implemented; maximum 600 events per pass |
+| Graphical track volume automation with timeline envelope overlay | Implemented for playback and WAV export |
+| Split all clips at detected or manually set verse/chorus boundaries | Implemented; nondestructive shared audio buffers |
 | Bass mastering with spectrum graph, six EQ bands, compressor, RMS target and peak ceiling | Implemented; approximate RMS, not LUFS |
 | STFT spectral noise reduction with configurable quiet-frame noise profile | Implemented; clips under 120 seconds |
 | Basic automatic monophonic pitch correction | Experimental |
@@ -87,7 +89,7 @@ Open the **Remix Lab** at the right or use **View → Remix panel**. For a hardt
 
 The editor's **Auto BPM** button analyzes a clip and produces independently editable tempo regions. Use **View → Tempo Map** to correct errors. Right-click on the timeline, library effects or library one-shots for fine control. The **View** menu opens movable panels including Sound Designer, Piano Roll, Drum Machine, Bass Lab, Spectral Noise Reduction, Mixer and Song Sections.
 
-The **Sound Designer** previews custom synthesized kicks/impacts with pitch, attack, release, saturation and filters. The **Piano Roll** writes playable notes into an editable audio track. The **Drum Machine** builds 16-step patterns repeated over multiple bars.
+The **Song Sections** window can turn detected/manual arrangement boundaries into real nondestructive clip splits. **Automation** draws track-volume envelopes and generates rhythmic pumping curves. The **Sound Designer** previews custom synthesized kicks/impacts with pitch, attack, release, saturation and filters. The **Piano Roll** writes playable notes into an editable audio track. The **Drum Machine** builds 16-step patterns repeated over multiple bars.
 
 ### Keyboard controls
 
