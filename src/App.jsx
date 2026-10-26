@@ -296,7 +296,7 @@ function App() {
           incoming.push(track);
         }catch(err){notify('Could not decode '+file.name+': '+err.message);}
       }
-      if(incoming.length){stopPlayback(true);commit(old=>[...old,...incoming]);setSelection({trackId:incoming[0].id,clipId:incoming[0].clips[0].id});notify('Imported '+incoming.length+' audio file(s).');}
+      if(incoming.length){stopPlayback(true);commit(old=>[...old,...incoming]);selectOnly(incoming[0].id,incoming[0].clips[0].id);notify('Imported '+incoming.length+' audio file(s).');}
     }catch(err){notify(err.message);}
     finally{setBusy(false);}
   },[commit,getAudioContext,notify,stopPlayback]);
@@ -333,7 +333,7 @@ function App() {
           const clip=clipFrom('Mic recording',buffer,startAt);
           track.clips=[clip];
           commit(old=>[...old,track]);
-          setSelection({trackId:track.id,clipId:clip.id});
+          selectOnly(track.id,clip.id);
           notify('Recording added to the timeline.');
         }catch(err){notify('Could not decode the recording: '+err.message);}
         finally{setBusy(false);}
@@ -350,7 +350,7 @@ function App() {
   const addTrack=useCallback(()=>{
     const track=initialTrack('Audio '+(tracksRef.current.length+1),COLORS[tracksRef.current.length%COLORS.length]);
     commit(old=>[...old,track]);
-    setSelection({trackId:track.id,clipId:null});
+    selectOnly(track.id,null);
   },[commit]);
 
   const addSound=useCallback((id,intensity=1)=>{
@@ -367,7 +367,7 @@ function App() {
     const clip=clipFrom(item.name,buffer,start);
     track.clips=[clip];
     commit(old=>[...old,track]);
-    setSelection({trackId:track.id,clipId:clip.id});
+    selectOnly(track.id,clip.id);
     setSelectedSoundId(id);
     notify(item.name+' added.');
   },[commit,notify,quantize,stopPlayback]);
@@ -388,14 +388,14 @@ function App() {
     if(!selection?.clipId)return;
     stopPlayback();
     commit(old=>old.map(t=>t.id===selection.trackId?{...t,clips:t.clips.filter(c=>c.id!==selection.clipId)}:t));
-    setSelection({trackId:selection.trackId,clipId:null});
+    selectOnly(selection.trackId,null);
   },[commit,selection,stopPlayback]);
 
   const duplicate=useCallback(()=>{
     if(!activeClip)return;
     const next={...activeClip,id:uid(),name:activeClip.name+' copy',start:activeClip.start+activeClip.duration};
     commit(old=>old.map(t=>t.id===selection.trackId?{...t,clips:[...t.clips,next]}:t));
-    setSelection({trackId:selection.trackId,clipId:next.id});
+    selectOnly(selection.trackId,next.id);
   },[activeClip,commit,selection]);
 
   const splitAtCursor=useCallback(()=>{
@@ -407,7 +407,7 @@ function App() {
     const a={...activeClip,id:uid(),duration:time-activeClip.start};
     const b={...activeClip,id:uid(),start:time,offset:activeClip.offset+(time-activeClip.start),duration:activeClip.duration-a.duration};
     commit(old=>old.map(t=>t.id===selection.trackId?{...t,clips:t.clips.flatMap(c=>c.id===activeClip.id?[a,b]:[c])}:t));
-    setSelection({trackId:selection.trackId,clipId:b.id});
+    selectOnly(selection.trackId,b.id);
   },[activeClip,commit,notify,selection]);
 
   const paste=useCallback(()=>{
@@ -417,7 +417,7 @@ function App() {
     const base=clipClipboard.current;
     const clip={...base,id:uid(),start:quantize(playheadRef.current)};
     commit(old=>old.map(t=>t.id===trackId?{...t,clips:[...t.clips,clip]}:t));
-    setSelection({trackId,clipId:clip.id});
+    selectOnly(trackId,clip.id);
   },[commit,quantize,selection]);
 
   const addBoomToBeats=useCallback(()=>{
@@ -429,7 +429,7 @@ function App() {
     const track=initialTrack('Hardstyle • '+bpm+' BPM','#ee9a7b');
     track.clips=Array.from({length:count},(_,i)=>clipFrom('Hardstyle Kick',sound,i*spacing));
     stopPlayback();commit(old=>[...old,track]);
-    setSelection({trackId:track.id,clipId:track.clips[0].id});
+    selectOnly(track.id,track.clips[0].id);
     notify('Added '+count+' hardstyle kicks on the '+bpm+' BPM grid.');
   },[bpm,commit,notify,stopPlayback]);
 
@@ -626,7 +626,7 @@ function App() {
     layer.clips=events.map(e=>clipFrom(SOUNDS.find(s=>s.id===tool)?.name||'Sample',amplified,Math.max(0,e.time)));
     stopPlayback();
     commit(before=>[...before,layer]);
-    setSelection({trackId:layer.id,clipId:layer.clips[0].id});
+    selectOnly(layer.id,layer.clips[0].id);
     notify('Created '+layer.clips.length+' rhythmic events. '+
       (config.alignMode==='grid'?'Strict BPM grid.':
       alignment.noReference?'No song reference: BPM grid used.':
@@ -704,7 +704,7 @@ function App() {
       const track=initialTrack('Designer · '+(SOUNDS.find(x=>x.id===id)?.name||id),COLORS[tracksRef.current.length%COLORS.length]);
       const newClip=clipFrom(track.name,buffer,quantize(playheadRef.current));
       track.clips=[newClip];commit(old=>[...old,track]);
-      setSelection({trackId:track.id,clipId:newClip.id});
+      selectOnly(track.id,newClip.id);
       notify('Designed sound added at playhead.');
     }catch(err){notify('Sound Designer: '+err.message);}
   },[commit,notify,quantize]);
@@ -739,7 +739,7 @@ function App() {
     });
     if(!track.clips.length){notify('Draw at least one drum note.');return;}
     commit(old=>[...old,track]);
-    setSelection({trackId:track.id,clipId:track.clips[0].id});
+    selectOnly(track.id,track.clips[0].id);
     notify('Inserted '+events.length+' notes from the drum sequencer.');
   },[commit,notify,quantize]);
 
@@ -749,7 +749,7 @@ function App() {
     const newClip=clipFrom('Piano pattern',buffer,Math.max(0,playheadRef.current));
     track.clips=[newClip];
     commit(old=>[...old,track]);
-    setSelection({trackId:track.id,clipId:newClip.id});
+    selectOnly(track.id,newClip.id);
     notify('Synthesized '+notes.length+' MIDI notes into an editable audio track.');
   },[commit,notify]);
 
@@ -799,7 +799,7 @@ function App() {
     if(event.button!==0||busy)return;
     event.preventDefault();event.stopPropagation();
     stopPlayback();
-    setSelection({trackId,clipId:clip.id});
+    selectOnly(trackId,clip.id);
     const before=tracksRef.current;
     const originX=event.clientX;
     const origin={...clip};
