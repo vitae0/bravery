@@ -153,3 +153,7 @@
 .drum-lane button.lit{background:var(--lane-color);border-color:var(--lane-color);box-shadow:0 0 10px #b798aa35}
 .drum-lane button.accent{box-shadow:inset 0 0 0 3px #fff9,0 0 9px #dec5e34f}
 @media(max-width:900px){.remix-dock{width:220px;min-width:220px}.app-menu-bar .menu-trigger{padding:6px 4px}.studio-window{left:25px!important}}
+
+.tempo-beat-region{position:absolute;top:0;height:100%;pointer-events:none;background-image:linear-gradient(90deg,#b899e050 1px,transparent 1px);border-left:1px solid #b79cd06f;opacity:.65}
+.tempo-ruler-region{position:absolute;top:0;height:100%;pointer-events:none;border-left:2px solid #a886d2}
+.tempo-ruler-region>span{position:absolute;right:4px;bottom:2px;padding:2px 5px;background:#453550;color:#e2baed;border-radius:3px;white-space:nowrap;font-size:9px;font-weight:700}
