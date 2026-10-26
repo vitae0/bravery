@@ -877,6 +877,17 @@ function App() {
       const modifier=e.ctrlKey||e.metaKey;
       if(modifier&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return;}
       if(modifier&&e.key.toLowerCase()==='y'){e.preventDefault();redo();return;}
+      if(modifier&&e.key.toLowerCase()==='a'){
+        e.preventDefault();
+        const ids=orderedClipIds(tracksRef.current);
+        setSelectedClipIds(ids);
+        selectionAnchorRef.current=ids[0]||null;
+        const lastId=ids.at(-1);
+        const lastTrack=tracksRef.current.find(t=>t.clips.some(c=>c.id===lastId));
+        setSelection(lastTrack?{trackId:lastTrack.id,clipId:lastId}:null);
+        notify(ids.length+' clip(s) selected.');
+        return;
+      }
       if(modifier&&e.key.toLowerCase()==='c'){if(activeClip){e.preventDefault();clipClipboard.current={...activeClip};notify('Clip copied.');}return;}
       if(modifier&&e.key.toLowerCase()==='v'){e.preventDefault();paste();return;}
       if(e.code==='Space'){e.preventDefault();pause();}
@@ -1117,7 +1128,9 @@ function App() {
         {[
           ['Space','Play / pause'],['S','Split selected clip'],['Delete','Remove selected clip'],
           ['Ctrl / Cmd + Z','Undo'],['Ctrl / Cmd + Shift + Z','Redo'],
-          ['Ctrl / Cmd + C','Copy clip'],['Ctrl / Cmd + V','Paste at playhead']
+          ['Ctrl / Cmd + C','Copy clip'],['Ctrl / Cmd + V','Paste at playhead'],
+          ['Ctrl / Cmd + A','Select all clips'],['Ctrl / Cmd + Click','Toggle selection'],
+          ['Shift + Click','Select continuous range'],['Ctrl / Cmd + Shift + Click','Add a range to selection']
         ].map(([key,desc])=><div className="shortcut-row" key={key}><kbd>{key}</kbd><span>{desc}</span></div>)}
       </div>
     </div>}
