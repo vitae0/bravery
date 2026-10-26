@@ -25,7 +25,8 @@ export function selectClipIds({ids=[],anchor=null,target,ordered=[],ctrl=false,s
 
 export function translateSelectedClips(tracks,selectedIds,delta) {
   const ids=new Set(selectedIds);
-  const lowest=Math.min(0,...tracks.flatMap(t=>t.clips.filter(c=>ids.has(c.id)).map(c=>c.start)));
-  const safeDelta=Math.max(-Math.abs(lowest),delta);
+  const starts=tracks.flatMap(t=>t.clips.filter(c=>ids.has(c.id)).map(c=>c.start));
+  if (!starts.length) return tracks;
+  const safeDelta=Math.max(-Math.min(...starts),delta);
   return tracks.map(t=>({...t,clips:t.clips.map(c=>ids.has(c.id)?{...c,start:Math.max(0,c.start+safeDelta)}:c)}));
 }
