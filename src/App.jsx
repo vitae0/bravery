@@ -71,8 +71,10 @@ function App() {
   const [playhead,setPlayhead]=useState(0);
   const playheadRef=useRef(0);
   const [playing,setPlaying]=useState(false);
+  const [recording,setRecording]=useState(false);
   const playbackRef=useRef(null);
   const audioCtxRef=useRef(null);
+  const recorderRef=useRef(null);
   const [bpm,setBpm]=useState(150);
   const [snap,setSnap]=useState(true);
   const [zoom,setZoom]=useState(75);
@@ -215,6 +217,52 @@ function App() {
       if(incoming.length){stopPlayback(true);commit(old=>[...old,...incoming]);setSelection({trackId:incoming[0].id,clipId:incoming[0].clips[0].id});notify('Imported '+incoming.length+' audio file(s).');}
     }catch(err){notify(err.message);}
     finally{setBusy(false);}
+  },[commit,getAudioContext,notify,stopPlayback]);
+
+  const toggleRecording=useCallback(async()=>{
+    if(recorderRef.current){
+      if(recorderRef.current.state!=='inactive')recorderRef.current.stop();
+      return;
+    }
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){
+      notify('Microphone recording is not supported in this browser.');return;
+    }
+    let stream;
+    try {
+      stopPlayback();
+      stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const recorder=new MediaRecorder(stream);
+      const chunks=[];
+      const startAt=playheadRef.current;
+      recorderRef.current=recorder;
+      recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
+      recorder.onerror=e=>notify('Microphone recording failed.');
+      recorder.onstop=async()=>{
+        recorderRef.current=null;
+        setRecording(false);
+        stream.getTracks().forEach(t=>t.stop());
+        if(!chunks.length){notify('No recording data was captured.');return;}
+        setBusy(true);
+        try {
+          const context=await getAudioContext();
+          const blob=new Blob(chunks,{type:recorder.mimeType||'audio/webm'});
+          const buffer=await context.decodeAudioData(await blob.arrayBuffer());
+          const track=initialTrack('Microphone '+(tracksRef.current.length+1),'#f5a4b4');
+          const clip=clipFrom('Mic recording',buffer,startAt);
+          track.clips=[clip];
+          commit(old=>[...old,track]);
+          setSelection({trackId:track.id,clipId:clip.id});
+          notify('Recording added to the timeline.');
+        }catch(err){notify('Could not decode the recording: '+err.message);}
+        finally{setBusy(false);}
+      };
+      recorder.start(250);
+      setRecording(true);
+      notify('Recording microphone. Press the red button to stop.');
+    }catch(err){
+      stream?.getTracks().forEach(t=>t.stop());
+      notify('Microphone access failed: '+err.message);
+    }
   },[commit,getAudioContext,notify,stopPlayback]);
 
   const addTrack=useCallback(()=>{
@@ -444,6 +492,7 @@ function App() {
     }
     clearTimeout(msgTimer.current);
     if(playbackRef.current)for(const source of playbackRef.current.sources)try{source.stop();}catch{}
+    if(recorderRef.current?.state==='recording')recorderRef.current.stop();
     audioCtxRef.current?.close();
   },[]);
 
@@ -530,6 +579,7 @@ function App() {
 
         <div className="transport-panel">
           <div className="transport-left">
+            <button className={'record-button '+(recording?'recording':'')} title={recording?'Stop recording microphone':'Record microphone'} aria-label={recording?'Stop recording microphone':'Record microphone'} onClick={toggleRecording}>{recording?<Square size={16} fill="currentColor"/>:<Mic2 size={18}/>}</button>
             <IconButton title="Back to start" onClick={()=>seek(0)}><SkipBack size={17}/></IconButton>
             <button aria-label={playing?'Pause':'Play'} title="Play / Pause (Space)" className="play-button" onClick={pause}>{playing?<Pause size={19} fill="currentColor"/>:<Play size={19} fill="currentColor"/>}</button>
             <IconButton title="Stop" onClick={()=>stopPlayback(true)}><Square size={15} fill="currentColor"/></IconButton>
