@@ -532,6 +532,21 @@ function App() {
     processClip(c=>applyEffect(c,withStrength(effect,intensity)),effect.name);
   },[processClip,withStrength]);
 
+  const previewEffect=useCallback(async(effect,intensity=1)=>{
+    if(!activeClip||!effect)return;
+    setBusy(true);
+    try{
+      const buffer=await applyEffect(activeClip,withStrength(effect,intensity));
+      const ctx=await getAudioContext();
+      const source=ctx.createBufferSource();
+      source.buffer=buffer;
+      source.connect(ctx.destination);
+      source.start();
+      notify('Previewing '+effect.name+'. Project audio was not changed.');
+    }catch(err){notify('Effect preview: '+err.message);}
+    finally{setBusy(false);}
+  },[activeClip,getAudioContext,notify,withStrength]);
+
   const remixLayer=useCallback(config=>{
     const {tool,every,source,customBpm,offset,intensity,swing,humanize,pattern,regions}=config;
     const duration=durationOf(tracksRef.current);
@@ -945,7 +960,7 @@ function App() {
       onAddTempo={addTempoRegion} onRemoveTempo={id=>setTempoRegions(old=>old.filter(r=>r.id!==id))}
       onDetectSections={detectSections} onUpdateSection={(id,changes)=>setSongSections(old=>old.map(r=>r.id===id?{...r,...changes}:r))}
       onAddSection={addSection} onRemoveSection={id=>setSongSections(old=>old.filter(r=>r.id!==id))} onJump={seek}
-      onMaster={bassMaster} onDenoise={denoise} onSoundEdit={editSound} onEffect={applyStrength}
+      onMaster={bassMaster} onDenoise={denoise} onSoundEdit={editSound} onEffect={applyStrength} onPreviewEffect={previewEffect}
       soundId={selectedSoundId} onChangeSound={setSelectedSoundId} onDesignedSound={addDesignedSound}
       onSoundPreview={previewDesignedSound} onDrums={addDrumPattern}/>
     <input ref={audioInput} type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" multiple hidden onChange={e=>{importAudio(e.target.files);e.target.value='';}}/>
