@@ -83,7 +83,7 @@ function bpmFromEnvelope(env,start=0,end=env.values.length) {
   if(b-a<fps*3)return {bpm:null,confidence:0};
   let bestBpm=120,best=-Infinity,second=-Infinity;
   const scores=[];
-  for(let bpm=65;bpm<=200;bpm+=0.5){
+  for(let bpm=55;bpm<=245;bpm+=0.5){
     const lag=fps*60/bpm;
     let corr=0,norm=0;
     for(let i=a;i+lag*2+1<b;i+=2){
@@ -339,12 +339,14 @@ export function synthPiano(notes,{bpm=150,bars=4,instrument='synth',swing=0,gain
 
 export async function periodicProcess(clip,effect,events,{widthBeats=0.5,mix=0.75,intensity=1,bpm=150}={}) {
   if(!clip||!events.length)throw new Error('Choose a clip and a non-empty beat pattern.');
-  if(events.length>80)throw new Error('Select a shorter period or fewer repeated events (maximum 80).');
+  if(events.length>600)throw new Error('A maximum of 600 repeated events is supported per effect pass.');
   const base=slicedClip(clip);
   const result=makeBuffer(base.numberOfChannels,base.length,base.sampleRate);
   for(let c=0;c<base.numberOfChannels;c++)result.getChannelData(c).set(base.getChannelData(c));
   const rate=base.sampleRate;
+  let processedEvents=0;
   for(const event of events){
+    if((processedEvents++ % 12)===0)await new Promise(resolve=>setTimeout(resolve,0));
     const pos=event.time-clip.start;
     if(pos<0||pos>=clip.duration)continue;
     const count=Math.min(base.length-Math.floor(pos*rate),Math.round(widthBeats*60/(event.bpm||bpm)*rate));
