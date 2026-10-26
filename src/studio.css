@@ -137,3 +137,19 @@
 .header-auto-bpm{height:30px;white-space:nowrap;padding:5px 9px;background:#43364e;color:#d6b1ea;border:1px solid #75598a;border-radius:7px;font-weight:700;font-size:10px}
 @media(max-width:1500px){.topbar{gap:10px}.app-menu-bar .menu-trigger{padding:8px 6px}.topbar-actions{gap:5px}.remix-dock{width:261px;min-width:261px}.dock-section{padding:12px 13px}.privacy-label{display:none}}
 @media(max-width:1150px){.remix-dock{width:234px;min-width:234px}.library{width:208px;min-width:208px}.project-area{display:none}.soft-button{display:none}.header-auto-bpm{max-width:72px;overflow:hidden;text-overflow:ellipsis}}
+
+.window-designer{width:585px}.window-drums{width:730px}
+.designer-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px 23px;padding:5px}
+.designer-panel .panel-row>.panel-action{width:55%}
+.panel-secondary{display:flex;align-items:center;justify-content:center;gap:7px;background:#463551;border:1px solid #89699b;color:#ead2f4;border-radius:8px;padding:10px 14px;font-weight:700;font-size:12px}
+.panel-secondary:hover:not(:disabled){background:#61466c}
+.drum-grid{margin:20px 0 12px;overflow-x:auto;border:1px solid #534358;border-radius:9px;background:#24202a;padding:11px;min-width:0}
+.drum-lane,.drum-scale{display:grid;grid-template-columns:109px repeat(16,minmax(20px,1fr));align-items:center;gap:4px;min-width:540px;margin-bottom:6px}
+.drum-scale{color:#8f809c;font-size:10px;text-align:center}
+.drum-lane strong{font-size:10px;color:#cbb8d4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drum-lane button{height:28px;background:#372d3a;border:1px solid #55415b;border-radius:5px;min-width:0;transition:background .1s,transform .1s}
+.drum-lane button:hover{transform:scale(1.04);border-color:#b791ce}
+.drum-lane button.bar-divide{border-left:2px solid #9a799c}
+.drum-lane button.lit{background:var(--lane-color);border-color:var(--lane-color);box-shadow:0 0 10px #b798aa35}
+.drum-lane button.accent{box-shadow:inset 0 0 0 3px #fff9,0 0 9px #dec5e34f}
+@media(max-width:900px){.remix-dock{width:220px;min-width:220px}.app-menu-bar .menu-trigger{padding:6px 4px}.studio-window{left:25px!important}}
