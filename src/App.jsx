@@ -530,7 +530,7 @@ function App() {
           pan:clamp(Number(track.pan??0),-1,1)
         });
       }
-      stopPlayback(true);commit(restored);setSelection(null);
+      stopPlayback(true);commit(restored);clearSelection();
       setProjectName(meta.name||'Imported project');
       setBpm(clamp(Number(meta.bpm)||150,40,240));
       setTempoRegions(Array.isArray(meta.tempoRegions)?meta.tempoRegions:[]);
@@ -543,7 +543,7 @@ function App() {
 
   const removeTrack=useCallback(id=>{
     stopPlayback();commit(old=>old.filter(t=>t.id!==id));
-    if(selection?.trackId===id)setSelection(null);
+    if(selection?.trackId===id)clearSelection();
   },[commit,selection,stopPlayback]);
 
   const updateAutomation=useCallback((id,points)=>{
@@ -882,11 +882,11 @@ function App() {
       if(e.code==='Space'){e.preventDefault();pause();}
       if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();deleteSelection();}
       if(e.key.toLowerCase()==='s'&&!modifier){e.preventDefault();splitAtCursor();}
-      if(e.key==='Escape'){setSelection(null);}
+      if(e.key==='Escape'){clearSelection();}
     };
     window.addEventListener('keydown',onKey);
     return ()=>window.removeEventListener('keydown',onKey);
-  },[activeClip,deleteSelection,notify,paste,pause,redo,splitAtCursor,undo]);
+  },[activeClip,deleteSelection,notify,paste,pause,redo,splitAtCursor,undo,clearSelection]);
 
   useEffect(()=>()=>{
     if(dragState.current){
@@ -1005,7 +1005,7 @@ function App() {
         </div>
 
         <section className="timeline-section">
-          <div className="section-title"><div><Layers size={17}/><h3>Timeline</h3><span className="track-counter">{tracks.length} tracks</span></div><span className="timeline-hint">Wheel over track = zoom · Right-click clip = edit · Drag edges = trim</span></div>
+          <div className="section-title"><div><Layers size={17}/><h3>Timeline</h3><span className="track-counter">{tracks.length} tracks</span></div><span className="timeline-hint">Wheel = zoom · Ctrl+click = toggle · Shift+click = range · Drag selection = move</span></div>
           <div className="timeline-scroll" ref={timelineScrollRef}>
             <div className="timeline-content" style={{width:timelineWidth+210}}>
               <div className="ruler-row">
@@ -1034,14 +1034,14 @@ function App() {
                   }}/>)}
                   {songSections.map(section=><div key={section.id} className="section-overlay" title={section.name} style={{left:section.start*zoom,width:Math.max(3,(section.end-section.start)*zoom),background:section.color,borderColor:section.color}}/>)}
                   {track.clips.map(clip=>{
-                    const selected=selection?.clipId===clip.id&&selection?.trackId===track.id;
+                    const selected=selectedIdSet.has(clip.id)||(!selectedClipIds.length&&selection?.clipId===clip.id&&selection?.trackId===track.id);
                     const width=Math.max(9,clip.duration*zoom);
                     return <div key={clip.id}
                       role="button" tabIndex={0} aria-label={'Clip '+clip.name}
                       className={'clip '+(selected?'clip-selected ':'')+(track.muted?'clip-muted':'')}
                       style={{left:clip.start*zoom,width,backgroundColor:track.color+'22',borderColor:selected?'#f7efff':track.color+'99'}}
                       onPointerDown={e=>beginDrag(e,track.id,clip,'move')}
-                      onClick={()=>onSelectClip(track.id,clip.id)} onContextMenu={e=>contextClip(e,track.id,clip.id)}>
+                      onClick={e=>{if(e.detail===0)onSelectClip(e,track.id,clip.id);}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();onSelectClip(e,track.id,clip.id);}}} onContextMenu={e=>contextClip(e,track.id,clip.id)}>
                       <Waveform clip={clip} width={width} color={track.color} selected={selected}/>
                       <div className="clip-name"><Music2 size={12}/><span>{clip.name}</span></div>
                       <div className="clip-handle left" title="Trim beginning" onPointerDown={e=>beginDrag(e,track.id,clip,'left')}/>
@@ -1068,7 +1068,7 @@ function App() {
         </section>
 
         <div className="bottom-info">
-          <div className="selection-info"><div className="selection-icon"><SlidersHorizontal size={18}/></div><div><strong>{activeClip?'Selected: '+activeClip.name:'No clip selected'}</strong><span>{activeClip?'Duration '+formatTime(activeClip.duration)+' · Choose a one-click effect from the library':'Select a clip to edit, split or process it'}</span></div></div>
+          <div className="selection-info"><div className="selection-icon"><SlidersHorizontal size={18}/></div><div><strong>{selectedClipIds.length>1?selectedClipIds.length+' clips selected':activeClip?'Selected: '+activeClip.name:'No clip selected'}</strong><span>{selectedClipIds.length>1?'Ctrl toggles clips · Shift selects a range · Effects and edits apply to the group':activeClip?'Duration '+formatTime(activeClip.duration)+' · Choose a one-click effect from the library':'Select a clip to edit, split or process it'}</span></div></div>
           <div className="status-cards"><span><span className="status-dot"/> Web Audio engine</span><span>44.1 kHz export</span><span>On-device</span></div>
         </div>
       </main>
