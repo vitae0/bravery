@@ -11,7 +11,7 @@ import { CATEGORIES, EFFECTS, SOUNDS } from './catalog.js';
 import { ViewMenu, RemixDock, WindowLayer } from './StudioWindows.jsx';
 import {
   analyzeTempo, suggestSections, reduceNoise, masterBass, synthPiano, bpmAt,
-  timelineBeats, periodicProcess, designSound, buildDrumEvents
+  timelineBeats, periodicProcess, designSound, buildDrumEvents, splitClipIntoSections
 } from './studio.js';
 import './studio.css';
 import {
@@ -628,6 +628,18 @@ function App() {
     finally{setBusy(false);}
   },[activeClip,notify,selectedPrimaryClip]);
 
+  const splitAtSections=useCallback(()=>{
+    if(!songSections.length){notify('Create section markers first.');return;}
+    stopPlayback();
+    let count=0;
+    commit(before=>before.map(track=>({...track,clips:track.clips.flatMap(c=>{
+      const pieces=splitClipIntoSections(c,songSections,uid);
+      count+=pieces.length-1;
+      return pieces;
+    })})));
+    notify('Split audio at '+songSections.length+' section marker(s): '+count+' new clip boundaries.');
+  },[songSections,commit,notify,stopPlayback]);
+
   const addTempoRegion=useCallback(()=>{
     const start=playheadRef.current,end=Math.max(start+4,durationOf(tracksRef.current));
     setTempoRegions(old=>[...old,{id:uid(),start,end,bpm}].sort((a,b)=>a.start-b.start));
@@ -906,7 +918,7 @@ function App() {
               <div className="ruler-row">
                 <div className="track-head ruler-label"><span>TRACKS</span></div>
                 <div className="ruler" style={{width:timelineWidth}} onPointerDown={e=>seek((e.clientX-e.currentTarget.getBoundingClientRect().left)/zoom)}>
-                  {songSections.map(section=><div key={section.id} className="section-overlay" title={section.name} style={{left:section.start*zoom,width:Math.max(3,(section.end-section.start)*zoom),background:section.color,borderColor:section.color}}/>)}
+                  {songSections.map(section=><div key={section.id} className="section-overlay" title={section.name} style={{left:section.start*zoom,width:Math.max(3,(section.end-section.start)*zoom),background:section.color,borderColor:section.color}}><span className="section-ruler-title">{section.name}</span></div>)}
                   {tempoRegions.map(region=><div key={region.id} className="tempo-ruler-region" title={'Local tempo '+region.bpm+' BPM'} style={{left:region.start*zoom,width:Math.max(3,(region.end-region.start)*zoom)}}><span>{region.bpm} BPM</span></div>)}
                   {rulerMarks.map(sec=><div key={sec} className="tick" style={{left:sec*zoom}}><span>{formatTime(sec).split('.')[0]}</span></div>)}
                 </div>
@@ -979,7 +991,8 @@ function App() {
       onAnalyzeTempo={autoTempo} onUpdateTempo={(id,changes)=>setTempoRegions(old=>old.map(r=>r.id===id?{...r,...changes}:r))}
       onAddTempo={addTempoRegion} onRemoveTempo={id=>setTempoRegions(old=>old.filter(r=>r.id!==id))}
       onDetectSections={detectSections} onUpdateSection={(id,changes)=>setSongSections(old=>old.map(r=>r.id===id?{...r,...changes}:r))}
-      onAddSection={addSection} onRemoveSection={id=>setSongSections(old=>old.filter(r=>r.id!==id))} onJump={seek}
+      onAddSection={addSection} onRemoveSection={id=>setSongSections(old=>old.filter(r=>r.id!==id))}
+      onSplitSections={splitAtSections} onJump={seek}
       onMaster={bassMaster} onDenoise={denoise} onSoundEdit={editSound} onEffect={applyStrength} onPreviewEffect={previewEffect}
       soundId={selectedSoundId} onChangeSound={setSelectedSoundId} onDesignedSound={addDesignedSound}
       onSoundPreview={previewDesignedSound} onDrums={addDrumPattern}
