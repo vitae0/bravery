@@ -60,9 +60,26 @@ export function audibleTracks(tracks) {
   return tracks.filter(t => !t.muted && (!anySolo || t.solo));
 }
 
-export function connectMixTrack(ctx, track, destination = ctx.destination) {
+export function connectMixTrack(ctx, track, destination = ctx.destination, fromTime = 0, when = 0) {
   const gain = ctx.createGain();
-  gain.gain.value = track.gain ?? 1;
+  const points=(track.automation||[]).filter(p=>Number.isFinite(p.time)&&Number.isFinite(p.value))
+    .sort((a,b)=>a.time-b.time);
+  const level=(track.gain??1);
+  const valueAt=(time)=>{
+    if(!points.length)return 1;
+    if(time<=points[0].time)return points[0].value;
+    for(let i=1;i<points.length;i++)if(time<points[i].time){
+      const a=points[i-1],b=points[i];
+      const fraction=(time-a.time)/Math.max(0.00001,b.time-a.time);
+      return a.value*(1-fraction)+b.value*fraction;
+    }
+    return points[points.length-1].value;
+  };
+  gain.gain.setValueAtTime(level*Math.max(0,valueAt(fromTime)),when);
+  for(const point of points){
+    if(point.time<=fromTime)continue;
+    gain.gain.linearRampToValueAtTime(level*Math.max(0,point.value),when+point.time-fromTime);
+  }
   const pan = ctx.createStereoPanner();
   pan.pan.value = track.pan ?? 0;
   gain.connect(pan); pan.connect(destination);
@@ -72,7 +89,7 @@ export function connectMixTrack(ctx, track, destination = ctx.destination) {
 export function scheduleClips(ctx, tracks, fromTime, when, destination = ctx.destination) {
   const sources = [];
   for (const track of audibleTracks(tracks)) {
-    const input = connectMixTrack(ctx, track, destination);
+    const input = connectMixTrack(ctx, track, destination, fromTime, when);
     for (const clip of track.clips) {
       const end = clip.start + clip.duration;
       if (end <= fromTime) continue;
