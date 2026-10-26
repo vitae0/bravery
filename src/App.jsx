@@ -578,19 +578,24 @@ function App() {
   },[]);
 
   const processClip=useCallback(async(processor,label)=>{
-    if(!activeClip){notify('Select a clip first.');return;}
-    if(studioSettings.confirmDestructive&&!window.confirm('Apply "'+label+'" to this clip? Undo can restore it.'))return;
-    const target=activeClip;
+    const ids=new Set(selectedClipIds.length?selectedClipIds:[activeClip?.id].filter(Boolean));
+    const targets=tracksRef.current.flatMap(t=>t.clips.filter(c=>ids.has(c.id)));
+    if(!targets.length){notify('Select at least one clip first.');return;}
+    if(studioSettings.confirmDestructive&&!window.confirm('Apply "'+label+'" to '+targets.length+' clip(s)? Undo can restore them.'))return;
     stopPlayback();
     setBusy(true);
     try{
-      const rendered=await processor(target);
-      if(!rendered)throw new Error('No processed audio was generated.');
-      replaceClipBuffer(target,rendered);
-      notify(label+' applied. Ctrl+Z to undo.');
+      const replacements=new Map();
+      for(const target of targets){
+        const rendered=await processor(target);
+        if(!rendered)throw new Error('No processed audio generated for '+target.name);
+        replacements.set(target.id,{...target,buffer:rendered,offset:0,duration:rendered.duration});
+      }
+      commit(before=>before.map(t=>({...t,clips:t.clips.map(c=>replacements.get(c.id)||c)})));
+      notify(label+' applied to '+targets.length+' clip(s). Ctrl+Z to undo.');
     }catch(err){notify(label+': '+err.message);}
     finally{setBusy(false);}
-  },[activeClip,studioSettings.confirmDestructive,stopPlayback,replaceClipBuffer,notify]);
+  },[activeClip,selectedClipIds,studioSettings.confirmDestructive,stopPlayback,commit,notify]);
 
   const applyStrength=useCallback((effect,intensity=1)=>{
     if(!effect)return;
@@ -807,33 +812,44 @@ function App() {
   const contextClip=useCallback((event,trackId,clipId)=>{
     event.preventDefault();
     event.stopPropagation();
-    setSelection({trackId,clipId});
+    if(!selectedClipIds.includes(clipId))selectOnly(trackId,clipId);
+    else setSelection({trackId,clipId});
     setContext({type:'clip',trackId,clipId,x:Math.min(event.clientX,innerWidth-240),y:Math.min(event.clientY,innerHeight-340)});
-  },[]);
+  },[selectedClipIds,selectOnly]);
   const contextEffect=useCallback((event,item,type='effect')=>{
     event.preventDefault();event.stopPropagation();
     setContextStrength(1);
     if(type==='sound')setSelectedSoundId(item.id);
     setContext({type,id:item.id,x:Math.min(event.clientX,innerWidth-250),y:Math.min(event.clientY,innerHeight-310)});
   },[]);
-  const onSelectClip=useCallback((trackId,clipId)=>{
-    setSelection({trackId,clipId});
-    if(studioSettings.autoOpenEditor)openWindow('sound');
-  },[openWindow,studioSettings.autoOpenEditor]);
+  const onSelectClip=useCallback((event,trackId,clipId,keepGroup=false)=>{
+    multiSelect(event,trackId,clipId,keepGroup);
+  },[multiSelect]);
 
   const beginDrag=useCallback((event,trackId,clip,action)=>{
     if(event.button!==0||busy)return;
     event.preventDefault();event.stopPropagation();
+    if(event.ctrlKey||event.metaKey||event.shiftKey){
+      onSelectClip(event,trackId,clip.id);
+      return;
+    }
+    const wasGrouped=selectedClipIds.length>1&&selectedClipIds.includes(clip.id);
+    onSelectClip(event,trackId,clip.id,action==='move');
     stopPlayback();
-    selectOnly(trackId,clip.id);
     const before=tracksRef.current;
     const originX=event.clientX;
     const origin={...clip};
+    const movingIds=action==='move'&&wasGrouped?selectedClipIds:[clip.id];
     let changed=false;
     const onMove=e=>{
       const delta=(e.clientX-originX)/zoom;
       let next={...origin};
-      if(action==='move')next.start=Math.max(0,quantize(origin.start+delta));
+      if(action==='move'){
+        const shift=quantize(origin.start+delta)-origin.start;
+        changed=true;
+        live(translateSelectedClips(before,movingIds,shift));
+        return;
+      }
       if(action==='left'){
         const time=clamp(quantize(origin.start+delta),Math.max(0,origin.start-origin.offset),origin.start+origin.duration-0.04);
         const shift=time-origin.start;
@@ -852,7 +868,7 @@ function App() {
     dragState.current={onMove,onUp};
     window.addEventListener('pointermove',onMove);
     window.addEventListener('pointerup',onUp,{once:true});
-  },[busy,live,quantize,record,stopPlayback,zoom]);
+  },[busy,live,onSelectClip,selectedClipIds,quantize,record,stopPlayback,zoom]);
 
   useEffect(()=>{
     const onKey=e=>{
