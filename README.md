@@ -89,6 +89,10 @@ Open the **Remix Lab** at the right or use **View → Remix panel**. For a hardt
 
 The editor's **Auto BPM** button analyzes a clip and produces independently editable tempo regions. Use **View → Tempo Map** to correct errors. Right-click on the timeline, library effects or library one-shots for fine control. The **View** menu opens movable panels including Sound Designer, Piano Roll, Drum Machine, Bass Lab, Spectral Noise Reduction, Mixer and Song Sections.
 
+**Spike-calibrated beat placement:** The Remix Lab defaults to **Auto · waveform spikes**. Set the timing to header BPM, tempo map, or custom BPM, then select an audio reference track (Auto picks the longest substantial clip). Bravery detects local attack transients, estimates each tempo region's beat phase, and snaps generated sounds and periodic effects to nearby attacks within a configurable search radius. The detected phase never stretches or splits the original song. Choose **Strict BPM grid** to disable alignment. Weak/missing transients fall back to the BPM grid, and heavily syncopated recordings may require a manual beat offset or a different reference track.
+
+**Multi-clip selection:** **Ctrl/Cmd+click** adds/removes individual clips, **Shift+click** selects a continuous range, **Ctrl/Cmd+Shift+click** adds a range, and **Ctrl/Cmd+A** selects all clips. Move selected clips together, duplicate, delete, split at the playhead, or apply the same effect to the whole selection. The editor preserves one undo step for each grouped operation.
+
 The **Song Sections** window can turn detected/manual arrangement boundaries into real nondestructive clip splits. **Automation** draws track-volume envelopes and generates rhythmic pumping curves. The **Sound Designer** previews custom synthesized kicks/impacts with pitch, attack, release, saturation and filters. The **Piano Roll** writes playable notes into an editable audio track. The **Drum Machine** builds 16-step patterns repeated over multiple bars.
 
 ### Keyboard controls
@@ -99,6 +103,10 @@ The **Song Sections** window can turn detected/manual arrangement boundaries int
 - Ctrl/Cmd + Z: undo
 - Ctrl/Cmd + Shift + Z: redo
 - Ctrl/Cmd + C / V: copy/paste clip
+- Ctrl/Cmd + click: toggle selected clip
+- Shift + click: select range
+- Ctrl/Cmd + Shift + click: extend selection
+- Ctrl/Cmd + A: select all clips
 
 ## Architecture
 
