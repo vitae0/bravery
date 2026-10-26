@@ -263,7 +263,7 @@ function TempoPanel({tracks,regions,bpm,onAnalyze,onUpdate,onAdd,onRemove,busy})
     <p className="panel-hint">Estimates use onset autocorrelation. Verify complex music manually; double/half-time ambiguity is normal.</p>
   </div>;
 }
-function SectionsPanel({sections,onDetect,onUpdate,onRemove,onAdd,tracks,busy,onJump}){
+function SectionsPanel({sections,onDetect,onUpdate,onRemove,onAdd,tracks,busy,onJump,onSplit}){
   return <div>
     <div className="panel-banner"><Layers size={21}/><span><strong>Song sections</strong><small>Detect arrangement changes and label verse / chorus / drop / bridge.</small></span></div>
     <Action disabled={busy||!tracks.some(t=>t.clips.length)} onClick={onDetect}><Sparkles size={16}/> Analyze and segment song</Action>
@@ -275,7 +275,10 @@ function SectionsPanel({sections,onDetect,onUpdate,onRemove,onAdd,tracks,busy,on
       <button title="Jump to section" onClick={()=>onJump(s.start)}><Play size={14}/></button>
       <button title="Remove section" onClick={()=>onRemove(s.id)}><Trash2 size={14}/></button>
     </div>)}</div>
-    <Action onClick={onAdd}><Plus size={15}/> Add manual section</Action>
+    <div className="panel-row">
+      <Action onClick={onAdd}><Plus size={15}/> Add manual section</Action>
+      <Action disabled={!sections.length||!tracks.some(t=>t.clips.length)} onClick={onSplit}><Layers size={15}/> Split clips at section markers</Action>
+    </div>
     <p className="panel-hint">Sections are change-point suggestions, not semantic voice recognition. Rename detected sections to match the song.</p>
   </div>;
 }
@@ -550,7 +553,7 @@ function AutomationPanel({tracks,bpm,playhead,onUpdate}){
 }
 export function WindowLayer({windows,onClose,onFocus,tracks,bpm,setBpm,activeClip,regions,sections,
   onTrackEdit,onGeneratePiano,onAnalyzeTempo,onUpdateTempo,onAddTempo,onRemoveTempo,
-  onDetectSections,onUpdateSection,onRemoveSection,onAddSection,onJump,onMaster,onDenoise,onSoundEdit,onEffect,onPreviewEffect,
+  onDetectSections,onUpdateSection,onRemoveSection,onAddSection,onSplitSections,onJump,onMaster,onDenoise,onSoundEdit,onEffect,onPreviewEffect,
   busy,settings,onSettings,onOpen,onOpenRemix,soundId,onChangeSound,onDesignedSound,onSoundPreview,onDrums,
   playhead,onUpdateAutomation}){
   const buffer=activeClip?.buffer;
@@ -564,7 +567,7 @@ export function WindowLayer({windows,onClose,onFocus,tracks,bpm,setBpm,activeCli
     {w.id==='designer'&&<SoundDesigner soundId={soundId} onChangeSound={onChangeSound} onAdd={onDesignedSound} onPreview={onSoundPreview} busy={busy}/>}
     {w.id==='piano'&&<PianoRoll bpm={bpm} onGenerate={onGeneratePiano}/>}
     {w.id==='tempo'&&<TempoPanel tracks={tracks} regions={regions} bpm={bpm} onAnalyze={onAnalyzeTempo} onUpdate={onUpdateTempo} onAdd={onAddTempo} onRemove={onRemoveTempo} busy={busy}/>}
-    {w.id==='sections'&&<SectionsPanel sections={sections} onDetect={onDetectSections} onUpdate={onUpdateSection} onRemove={onRemoveSection} onAdd={onAddSection} tracks={tracks} busy={busy} onJump={onJump}/>}
+    {w.id==='sections'&&<SectionsPanel sections={sections} onDetect={onDetectSections} onUpdate={onUpdateSection} onRemove={onRemoveSection} onAdd={onAddSection} onSplit={onSplitSections} tracks={tracks} busy={busy} onJump={onJump}/>}
     {w.id==='bass'&&<BassPanel buffer={buffer} onApply={onMaster} busy={busy}/>}
     {w.id==='noise'&&<NoisePanel buffer={buffer} onApply={onDenoise} busy={busy}/>}
     {w.id==='sound'&&<SoundPanel activeClip={activeClip} onSoundEdit={onSoundEdit} onOpen={onOpen} busy={busy}/>}
