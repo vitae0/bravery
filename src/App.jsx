@@ -373,42 +373,68 @@ function App() {
   },[commit,notify,quantize,stopPlayback]);
 
   const apply=useCallback(async(effect)=>{
-    if(!activeClip){notify('Select an audio clip to apply an effect.');return;}
+    const ids=new Set(selectedClipIds.length?selectedClipIds:[activeClip?.id].filter(Boolean));
+    const targets=tracksRef.current.flatMap(t=>t.clips.filter(c=>ids.has(c.id)));
+    if(!targets.length){notify('Select at least one audio clip.');return;}
     stopPlayback();setBusy(true);
     try{
-      const buffer=await applyEffect(activeClip,effect);
-      const newClip={...activeClip,buffer,offset:0,duration:buffer.duration};
-      commit(old=>old.map(t=>t.id===selection.trackId?{...t,clips:t.clips.map(c=>c.id===activeClip.id?newClip:c)}:t));
-      notify(effect.name+' applied. Undo is available.');
+      const processed=new Map();
+      for(const target of targets){
+        const buffer=await applyEffect(target,effect);
+        processed.set(target.id,{...target,buffer,offset:0,duration:buffer.duration});
+      }
+      commit(old=>old.map(t=>({...t,clips:t.clips.map(c=>processed.get(c.id)||c)})));
+      notify(effect.name+' applied to '+processed.size+' clip(s). Undo is available.');
     }catch(err){notify(effect.name+': '+err.message);}
     finally{setBusy(false);}
-  },[activeClip,commit,notify,selection,stopPlayback]);
+  },[activeClip,selectedClipIds,commit,notify,stopPlayback]);
 
   const deleteSelection=useCallback(()=>{
-    if(!selection?.clipId)return;
+    const ids=new Set(selectedClipIds.length?selectedClipIds:[selection?.clipId].filter(Boolean));
+    if(!ids.size)return;
     stopPlayback();
-    commit(old=>old.map(t=>t.id===selection.trackId?{...t,clips:t.clips.filter(c=>c.id!==selection.clipId)}:t));
-    selectOnly(selection.trackId,null);
-  },[commit,selection,stopPlayback]);
+    commit(old=>old.map(t=>({...t,clips:t.clips.filter(c=>!ids.has(c.id))})));
+    clearSelection();
+  },[commit,selection,selectedClipIds,stopPlayback,clearSelection]);
 
   const duplicate=useCallback(()=>{
-    if(!activeClip)return;
-    const next={...activeClip,id:uid(),name:activeClip.name+' copy',start:activeClip.start+activeClip.duration};
-    commit(old=>old.map(t=>t.id===selection.trackId?{...t,clips:[...t.clips,next]}:t));
-    selectOnly(selection.trackId,next.id);
-  },[activeClip,commit,selection]);
+    const ids=new Set(selectedClipIds.length?selectedClipIds:[activeClip?.id].filter(Boolean));
+    if(!ids.size)return;
+    const copied=[];
+    commit(old=>old.map(t=>{
+      const extras=t.clips.filter(c=>ids.has(c.id)).map(c=>{
+        const next={...c,id:uid(),name:c.name+' copy',start:c.start+c.duration};
+        copied.push({trackId:t.id,clipId:next.id});return next;
+      });
+      return extras.length?{...t,clips:[...t.clips,...extras]}:t;
+    }));
+    if(copied.length){
+      setSelectedClipIds(copied.map(c=>c.clipId));
+      selectionAnchorRef.current=copied[0].clipId;
+      setSelection(copied.at(-1));
+    }
+  },[activeClip,selectedClipIds,commit]);
 
   const splitAtCursor=useCallback(()=>{
-    if(!activeClip){notify('Select a clip to split.');return;}
+    const ids=new Set(selectedClipIds.length?selectedClipIds:[activeClip?.id].filter(Boolean));
     const time=playheadRef.current;
-    if(time<=activeClip.start+0.02||time>=activeClip.start+activeClip.duration-0.02){
-      notify('Move the playhead inside the selected clip.');return;
-    }
-    const a={...activeClip,id:uid(),duration:time-activeClip.start};
-    const b={...activeClip,id:uid(),start:time,offset:activeClip.offset+(time-activeClip.start),duration:activeClip.duration-a.duration};
-    commit(old=>old.map(t=>t.id===selection.trackId?{...t,clips:t.clips.flatMap(c=>c.id===activeClip.id?[a,b]:[c])}:t));
-    selectOnly(selection.trackId,b.id);
-  },[activeClip,commit,notify,selection]);
+    const replacements=[];
+    let split=0;
+    const next=tracksRef.current.map(t=>({...t,clips:t.clips.flatMap(c=>{
+      if(!ids.has(c.id)||time<=c.start+.02||time>=c.start+c.duration-.02)return [c];
+      const a={...c,id:uid(),duration:time-c.start};
+      const b={...c,id:uid(),start:time,offset:c.offset+(time-c.start),duration:c.duration-a.duration};
+      replacements.push({trackId:t.id,clipId:b.id});
+      split++;
+      return [a,b];
+    })}));
+    if(!split){notify('Move the playhead inside the selected clip(s).');return;}
+    commit(next);
+    setSelectedClipIds(replacements.map(c=>c.clipId));
+    selectionAnchorRef.current=replacements[0].clipId;
+    setSelection(replacements.at(-1));
+    notify('Split '+split+' selected clip(s).');
+  },[activeClip,selectedClipIds,commit,notify]);
 
   const paste=useCallback(()=>{
     if(!clipClipboard.current)return;
