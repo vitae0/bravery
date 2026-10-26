@@ -492,6 +492,10 @@ function App() {
     if(selection?.trackId===id)setSelection(null);
   },[commit,selection,stopPlayback]);
 
+  const updateAutomation=useCallback((id,points)=>{
+    commit(previous=>previous.map(t=>t.id===id?{...t,automation:points}:t));
+  },[commit]);
+
   const modifyTrack=useCallback((id,changes)=>{
     const previous=tracksRef.current;
     live(previous.map(t=>t.id===id?{...t,...changes}:t));
@@ -939,6 +943,10 @@ function App() {
                       <div className="clip-handle right" title="Trim end" onPointerDown={e=>beginDrag(e,track.id,clip,'right')}/>
                     </div>;
                   })}
+                  {!!track.automation?.length&&<svg className="track-automation-curve" style={{width:timelineWidth}} viewBox={'0 0 '+timelineWidth+' 110'} preserveAspectRatio="none">
+                    <polyline fill="none" stroke="#edc78e" strokeWidth="2" points={[...track.automation].sort((a,b)=>a.time-b.time).map(p=>(p.time*zoom)+','+(95-40*Math.max(0,Math.min(2,p.value)))).join(' ')}/>
+                    {track.automation.map(p=><circle key={p.id} cx={p.time*zoom} cy={95-40*Math.max(0,Math.min(2,p.value))} r="4" fill="#ffdcab" stroke="#3e2740" strokeWidth="2"/>)}
+                  </svg>}
                 </div>
               </div>)}
               <div className="new-track-row"><div className="track-head add-track"><button onClick={addTrack}><Plus size={15}/> Add track</button></div><div className="empty-lane" style={{width:timelineWidth}}/></div>
@@ -974,7 +982,8 @@ function App() {
       onAddSection={addSection} onRemoveSection={id=>setSongSections(old=>old.filter(r=>r.id!==id))} onJump={seek}
       onMaster={bassMaster} onDenoise={denoise} onSoundEdit={editSound} onEffect={applyStrength} onPreviewEffect={previewEffect}
       soundId={selectedSoundId} onChangeSound={setSelectedSoundId} onDesignedSound={addDesignedSound}
-      onSoundPreview={previewDesignedSound} onDrums={addDrumPattern}/>
+      onSoundPreview={previewDesignedSound} onDrums={addDrumPattern}
+      playhead={playhead} onUpdateAutomation={updateAutomation}/>
     <input ref={audioInput} type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" multiple hidden onChange={e=>{importAudio(e.target.files);e.target.value='';}}/>
     <input ref={projectInput} type="file" accept=".bravery" hidden onChange={e=>{loadProject(e.target.files[0]);e.target.value='';}}/>
     {context&&<div className="clip-context" style={{left:context.x,top:context.y}} onContextMenu={e=>e.preventDefault()}>
