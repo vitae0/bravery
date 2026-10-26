@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { CATEGORIES, EFFECTS, SOUNDS } from './catalog.js';
 import { ViewMenu, RemixDock, WindowLayer } from './StudioWindows.jsx';
+import { alignBeatEvents, transientsFromClip } from './beatSync.js';
+import { orderedClipIds, selectClipIds, translateSelectedClips } from './selection.js';
 import {
   analyzeTempo, suggestSections, reduceNoise, masterBass, synthPiano, bpmAt,
   timelineBeats, periodicProcess, designSound, buildDrumEvents, splitClipIntoSections
@@ -558,6 +560,18 @@ function App() {
     finally{setBusy(false);}
   },[activeClip,getAudioContext,notify,withStrength]);
 
+  const alignmentFor=useCallback((events,config)=>{
+    if(config.alignMode==='grid'||!events.length)return {events,aligned:0,confidence:0,phaseShift:0};
+    const preferred=tracksRef.current.find(t=>t.id===config.referenceTrackId);
+    const candidate=(preferred?.clips||[]).filter(c=>c.duration>=2).sort((a,b)=>b.duration-a.duration)[0] ||
+      tracksRef.current.flatMap(t=>t.clips).filter(c=>c.duration>=3).sort((a,b)=>b.duration-a.duration)[0];
+    if(!candidate)return {events,aligned:0,confidence:0,phaseShift:0,noReference:true};
+    const peaks=transientsFromClip(candidate,{maxSeconds:720});
+    if(!peaks.length)return {events,aligned:0,confidence:0,phaseShift:0,noAttacks:true};
+    return alignBeatEvents(events,peaks,{enabled:true,toleranceMs:config.alignTolerance??125,
+      strength:config.alignStrength??1,phaseLock:true});
+  },[]);
+
   const remixLayer=useCallback(config=>{
     const {tool,every,source,customBpm,offset,intensity,swing,humanize,pattern,regions}=config;
     const duration=durationOf(tracksRef.current);
@@ -568,6 +582,14 @@ function App() {
     if(pattern==='offbeat')events=events.map(e=>({...e,time:e.time+60/(e.bpm||bpm)/2})).filter(e=>e.time<finish);
     if(pattern==='alternating')events=events.filter((e,i)=>i%2===0);
     if(!events.length){notify('No beats fall in this interval. Check the start/end settings.');return;}
+    events=events.map((e,i)=>{
+      const localBeat=60/Math.max(40,e.bpm||bpm);
+      const swung=i%2===1?swing/100*localBeat/2:0;
+      const human=humanize?Math.sin(i*731.31+25)*humanize/1000:0;
+      return {...e,time:Math.max(0,e.time+swung+human)};
+    });
+    const alignment=alignmentFor(events,config);
+    events=alignment.events;
     const original=generateSound(tool);
     const amplified=makeBuffer(original.numberOfChannels,original.length,original.sampleRate);
     for(let c=0;c<amplified.numberOfChannels;c++){
@@ -575,17 +597,16 @@ function App() {
       for(let i=0;i<dst.length;i++)dst[i]=clamp(src[i]*intensity,-1,1);
     }
     const layer=initialTrack(SOUNDS.find(s=>s.id===tool)?.name+' · every '+every+' beats','#ffb18e');
-    const beat=60/Math.max(40,source==='custom'?customBpm:bpm);
-    layer.clips=events.map((e,i)=>{
-      const swung=(i%2===1 ? swing/100*beat/2 : 0);
-      const human=humanize?Math.sin(i*731.31+25)*humanize/1000:0;
-      return clipFrom(SOUNDS.find(s=>s.id===tool)?.name||'Sample',amplified,Math.max(0,e.time+swung+human));
-    });
+    layer.clips=events.map(e=>clipFrom(SOUNDS.find(s=>s.id===tool)?.name||'Sample',amplified,Math.max(0,e.time)));
     stopPlayback();
     commit(before=>[...before,layer]);
     setSelection({trackId:layer.id,clipId:layer.clips[0].id});
-    notify('Created '+layer.clips.length+' rhythmic events at '+every+'-beat intervals.');
-  },[bpm,commit,notify,stopPlayback]);
+    notify('Created '+layer.clips.length+' rhythmic events. '+
+      (config.alignMode==='grid'?'Strict BPM grid.':
+      alignment.noReference?'No song reference: BPM grid used.':
+      alignment.noAttacks?'No clear spikes found: BPM grid used.':
+      alignment.aligned+' aligned to waveform attacks ('+Math.round(alignment.phaseShift*1000)+'ms phase).'));
+  },[alignmentFor,bpm,commit,notify,stopPlayback]);
 
   const applyPeriodic=useCallback(async config=>{
     const effect=config.effect;
@@ -595,8 +616,10 @@ function App() {
     const finish=Math.min(target.start+target.duration,config.finish>start?config.finish:target.start+target.duration);
     const events=timelineBeats(start,finish,{source:config.source,customBpm:config.customBpm,bpm,regions:tempoRegions,every:config.every,offset:config.offset});
     if(!events.length){notify('No periodic events in the selected clip.');return;}
-    await processClip(c=>periodicProcess(c,withStrength(effect,config.intensity),events,{widthBeats:config.width,mix:config.mix,intensity:1,bpm}),'Periodic '+effect.name);
-  },[activeClip,bpm,tempoRegions,notify,processClip,withStrength]);
+    const alignment=alignmentFor(events,config);
+    await processClip(c=>periodicProcess(c,withStrength(effect,config.intensity),alignment.events,
+      {widthBeats:config.width,mix:config.mix,intensity:1,bpm}),'Periodic '+effect.name);
+  },[activeClip,alignmentFor,bpm,tempoRegions,notify,processClip,withStrength]);
 
   const autoTempo=useCallback(async()=>{
     const candidate=activeClip||selectedPrimaryClip();
@@ -906,7 +929,9 @@ function App() {
           </div>
           <div className="transport-right">
             <span className="bpm-indicator"><span className="beat-indicator" /> 4/4</span>
-            <button className="hardstyle-button" disabled={!duration||busy} onClick={addBoomToBeats}><Zap size={16}/> Hardstyle on beats</button>
+            <button className="hardstyle-button" disabled={!duration||busy} onClick={()=>remixLayer({tool:'hard-kick',every:1,source:'project',bpm,offset:0,intensity:.84,
+          swing:0,humanize:0,pattern:'every',regions:tempoRegions,start:0,finish:0,
+          alignMode:'spikes',alignTolerance:125,alignStrength:1,referenceTrackId:'auto'})}><Zap size={16}/> Hardstyle on beats</button>
             <IconButton title="Keyboard shortcuts" onClick={()=>setShortcutOpen(true)}><Keyboard size={18}/></IconButton>
           </div>
         </div>
