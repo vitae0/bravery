@@ -157,3 +157,13 @@
 .tempo-beat-region{position:absolute;top:0;height:100%;pointer-events:none;background-image:linear-gradient(90deg,#b899e050 1px,transparent 1px);border-left:1px solid #b79cd06f;opacity:.65}
 .tempo-ruler-region{position:absolute;top:0;height:100%;pointer-events:none;border-left:2px solid #a886d2}
 .tempo-ruler-region>span{position:absolute;right:4px;bottom:2px;padding:2px 5px;background:#453550;color:#e2baed;border-radius:3px;white-space:nowrap;font-size:9px;font-weight:700}
+
+.window-automation{width:665px}
+.automation-graph{padding:18px 12px 8px 43px;position:relative;height:210px;border:1px solid #594465;background:repeating-linear-gradient(0deg,#282230,#282230 42px,#4a3c53 43px);border-radius:10px;margin:15px 0}
+.automation-graph svg{width:100%;height:170px;display:block;cursor:crosshair;overflow:visible}
+.automation-graph circle{cursor:pointer}
+.automation-axis{position:absolute;left:5px;top:15px;bottom:36px;display:flex;flex-direction:column;justify-content:space-between;color:#b19dbd;font-size:10px}
+.automation-scale{display:flex;justify-content:space-between;color:#9e8daf;font-size:10px;margin-top:4px}
+.automation-editor{padding:10px 14px;border:1px solid #634b71;background:#332839;border-radius:9px;margin:12px 0}
+.automation-editor>strong{font-size:12px;color:#e2c2fa}
+.track-automation-curve{height:110px;position:absolute;left:0;top:0;pointer-events:none;z-index:7;filter:drop-shadow(0 0 2px #a97762a5)}
