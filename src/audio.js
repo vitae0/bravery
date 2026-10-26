@@ -103,6 +103,7 @@ function cloneBuffer(input, channels = input.numberOfChannels) {
   return out;
 }
 
+function clampTransient(x){return Math.max(0,Math.min(1,x));}
 function simpleProcess(input, kind, config) {
   const len = input.length, rate = input.sampleRate, ch = input.numberOfChannels;
   if (kind === 'speed') {
@@ -137,8 +138,34 @@ function simpleProcess(input, kind, config) {
     const a = out.getChannelData(c);
     if (kind === 'reverse') { a.reverse(); continue; }
     if (kind === 'stereowiden' && ch >= 2 && c > 0) continue;
-    let held = 0, gateGain = 0;
+    let held = 0, gateGain = 0, fast = 0, slow = 0;
+    const raw=input.getChannelData(c);
+    const beatLength=Math.max(1,Math.round(rate*60/(config.bpm||150)));
+    const loopLength=Math.max(1,Math.round(beatLength*(config.beats||1)));
+    const repeatLength=Math.max(64,Math.floor(loopLength/Math.max(2,config.repeats||4)));
     for (let i = 0; i < len; i++) {
+      if (kind === 'pump') {
+        const pos=(i%loopLength)/loopLength;
+        const release=Math.max(.01,config.release||.26);
+        const duck=(config.depth||.65)*Math.exp(-pos/release);
+        a[i] *= Math.max(0,1-duck);
+      }
+      if (kind === 'stutter') {
+        const blockStart=Math.floor(i/loopLength)*loopLength;
+        const offset=i-blockStart;
+        const originalIndex=Math.min(len-1,blockStart+offset%repeatLength);
+        const edge=Math.min(1,(offset%repeatLength)/32,(repeatLength-1-(offset%repeatLength))/32);
+        a[i] = raw[originalIndex]*Math.max(0,edge);
+      }
+      if (kind === 'transient') {
+        const value=Math.abs(a[i]);
+        fast+=(value-fast)*.035;
+        slow+=(value-slow)*.0004;
+        const attack=clampTransient((fast-slow)/(slow+.02));
+        const gain=1+(config.attack||0)*attack;
+        const sustainGain=1+(config.sustain||0)*(1-attack);
+        a[i]=Math.max(-1,Math.min(1,a[i]*gain*sustainGain));
+      }
       if (kind === 'normalize' && peak > 0) a[i] *= 0.891 / peak;
       if (kind === 'gain') a[i] *= Math.pow(10, config.db / 20);
       if (kind === 'fadein') a[i] *= i / Math.max(1, len - 1);
@@ -338,7 +365,7 @@ async function webProcess(input, kind, config) {
 export async function applyEffect(clip, effect) {
   const input = slicedClip(clip);
   const {kind,config} = effect;
-  if (['normalize','reverse','fadein','fadeout','gain','bitcrush','gate','mono','stereowiden','speed'].includes(kind)) {
+  if (['normalize','reverse','fadein','fadeout','gain','bitcrush','gate','mono','stereowiden','speed','pump','stutter','transient'].includes(kind)) {
     return simpleProcess(input,kind,config);
   }
   if (kind === 'pitch') return granularPitch(input,config.semitones);
