@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { connectMixTrack } from '../src/audio.js';
 import { bpmAt, buildDrumEvents, timelineBeats } from '../src/studio.js';
 import { CATEGORIES, EFFECTS, SOUNDS } from '../src/catalog.js';
 
@@ -66,4 +67,15 @@ test('all effects map to implemented Web Audio or sample operations',()=>{
     assert.ok(supported.has(effect.kind),effect.name+' has an unknown processor');
     assert.ok(CATEGORIES.includes(effect.category),effect.name+' has an unknown category');
   }
+});
+
+test('automation ramps are scheduled for both live and offline mixers',()=>{
+  const calls=[];
+  const fakeParam={setValueAtTime:(...args)=>calls.push(['set',...args]),linearRampToValueAtTime:(...args)=>calls.push(['ramp',...args])};
+  const node=()=>({connect:()=>{},gain:fakeParam,pan:{value:0}});
+  const context={destination:{},createGain:node,createStereoPanner:node};
+  connectMixTrack(context,{
+    gain:.8,pan:.2,automation:[{time:0,value:.25},{time:2,value:1},{time:3,value:.5}]
+  },context.destination,0,0);
+  assert.deepEqual(calls,[['set',.2,0],['ramp',.8,2],['ramp',.4,3]]);
 });
