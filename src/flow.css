@@ -1,3 +1,6 @@
+/* Flow intentionally escapes the legacy editor's fixed viewport and 720px minimum. */
+body:has(.flow-screen){min-width:320px;}
+.app-shell.flow-screen{height:auto;min-height:100vh;overflow:visible;}
 .flow-screen {min-height:100%;background:#0b0c12;color:#f5f3fb;font-family:Inter,system-ui,sans-serif;}
 .flow-mode {max-width:1480px;margin:0 auto;padding:24px clamp(18px,4vw,64px) 38px;box-sizing:border-box;}
 .flow-top,.flow-top-actions,.flow-brand,.flow-transport,.flow-track-top,.flow-stage-head,.flow-pads-title,.flow-footer,.flow-footer-actions {display:flex;align-items:center;justify-content:space-between;gap:16px;}
