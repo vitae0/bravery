@@ -7,6 +7,18 @@ export const FLOW_PADS = [
   {key:'f', kind:'impact', sound:'boom', label:'IMPACT', hint:'Drama'}
 ];
 
+// Pick a voice from the user's density and the song tempo, not from settings.
+export function flowSoundFor(kind,bpm,hits=[]) {
+  const beat=60/flowClamp(bpm,40,240);
+  const recent=(hits||[]).slice(-5);
+  const fast=recent.length>=3 && (recent.at(-1).time-recent[0].time)/(recent.length-1)<beat*0.52;
+  if(kind==='kick')return fast?'punch':bpm<112?'808':'hard-kick';
+  if(kind==='snare')return fast||bpm>172?'clap':'snare';
+  if(kind==='impact')return fast?'zap':'boom';
+  if(kind==='hat')return 'hat';
+  return 'zap';
+}
+
 export const flowClamp = (value, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(value) ? value : lo));
 
 export function flowSectionAt(time, sections=[], bpm=150, duration=0) {
