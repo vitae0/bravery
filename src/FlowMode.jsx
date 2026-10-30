@@ -9,7 +9,7 @@ const gesturePath=points=>points.map((p,i)=>(i?'L':'M')+(p.x*1000).toFixed(1)+' 
 
 export default function FlowMode({
   playing,playhead,duration,bpm,sections,tracks, status,
-  onPlay,onExit,onImport,onSave,onExport,onPad,onGesture,onClear
+  onPlay,onExit,onImport,onSave,onExport,onPad,onGesture,onClear,onPreviewStart,onPreviewMove,onPreviewEnd
 }) {
   const [drawing,setDrawing]=useState(null);
   const [trails,setTrails]=useState([]);
@@ -52,7 +52,7 @@ export default function FlowMode({
     if(!playing || e.button!==0)return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const points=[coords(e)];
-    drawRef.current={id:e.pointerId,points};
+    drawRef.current={id:e.pointerId,points,preview:false};
     setDrawing(points);
   };
   const onMove=e=>{
@@ -61,6 +61,11 @@ export default function FlowMode({
     const p=coords(e),previous=active.points.at(-1);
     if(active.points.length<220 && (Math.hypot(p.x-previous.x,p.y-previous.y)>0.006 || p.at-previous.at>45)){
       active.points.push(p);
+      if(!active.preview && Math.hypot(p.x-active.points[0].x,p.y-active.points[0].y)>.055){
+        onPreviewStart(active.points[0]);
+        active.preview=true;
+      }
+      if(active.preview)onPreviewMove(p);
       setDrawing([...active.points]);
     }
   };
@@ -69,16 +74,17 @@ export default function FlowMode({
     if(!active||active.id!==e.pointerId)return;
     const points=[...active.points,coords(e)];
     drawRef.current=null;setDrawing(null);
-    if(!playing)return;
+    if(!playing){if(active.preview)onPreviewEnd();return;}
     const gesture=classifyFlowGesture(points);
     if(gesture.kind==='tap'){
       const p=FLOW_PADS[Math.min(3,Math.floor(points[0].x*4))];
       onPad(p.kind);setLastPad(p.kind);
     } else {
-      onGesture(points);
+      onGesture(points,active.preview);
       setLastPad('gesture');
       setTrails(previous=>[...previous.slice(-3),{id:Date.now()+Math.random(),points}]);
     }
+    if(active.preview)onPreviewEnd();
   };
   const sectionPercent=Math.max(0,Math.min(100,barProgress*100));
   return <section className="flow-mode">
@@ -106,11 +112,11 @@ export default function FlowMode({
       </div>
       <span className="flow-save-info">{heardCount} gestures / hits<br/>{loopCount} learned repeats</span>
     </div>
-    <div className="flow-stage-head"><div><strong>THE CANVAS</strong><span>Draw a sweep · scribble a texture · click to drop a beat</span></div><span className="flow-stage-index">01 / LIVE</span></div>
+    <div className="flow-stage-head"><div><strong>THE CANVAS</strong><span>Draw and hear a sweep · scribble a texture · click to drop a beat</span></div><span className="flow-stage-index">01 / LIVE</span></div>
     <div className={'flow-canvas '+(!playing?'flow-idle':'')} ref={padRef}
       role="button" tabIndex={0} aria-label="Draw a sound while playing; press Enter for a kick"
       onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(playing)onPad('kick');}}}
-      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={()=>{drawRef.current=null;setDrawing(null);}}>
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={()=>{if(drawRef.current?.preview)onPreviewEnd();drawRef.current=null;setDrawing(null);}}>
       <svg className="flow-canvas-lines" viewBox="0 0 1000 400" preserveAspectRatio="none" aria-hidden="true">
         {Array.from({length:9},(_,i)=><line key={'v'+i} x1={i*125} y1="0" x2={i*125} y2="400"/>)}
         {Array.from({length:5},(_,i)=><line key={'h'+i} x1="0" y1={i*100} x2="1000" y2={i*100}/>)}
