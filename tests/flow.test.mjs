@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {flowSectionAt,inferFlowLoop,classifyFlowGesture,synthesizeFlowGesture} from '../src/flow.js';
+import {flowSectionAt,inferFlowLoop,flowSoundFor,classifyFlowGesture,synthesizeFlowGesture} from '../src/flow.js';
 
 const section={start:0,end:32,name:'Verse'};
 const events=times=>times.map(time=>({time,kind:'kick',intensity:.7}));
@@ -59,4 +59,11 @@ test('Flow gesture synthesis stays finite and produces stereo samples',()=>{
   assert.ok(wave.left.every(Number.isFinite));
   assert.ok(wave.right.every(Number.isFinite));
   assert.ok(Math.max(...wave.left)<1);
+});
+
+test('Flow changes sample choice based on perceived energy without user settings',()=>{
+  assert.equal(flowSoundFor('kick',95,events([1,2])),'808');
+  assert.equal(flowSoundFor('kick',180,events([1,1.08,1.18,1.28])),'punch');
+  assert.equal(flowSoundFor('snare',180,events([1,2])),'clap');
+  assert.equal(flowSoundFor('hat',100,events([1,2])),'hat');
 });
