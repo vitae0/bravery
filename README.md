@@ -22,6 +22,9 @@ The workflow builds with Vite using the project-specific base path /bravery/.
 | Feature | Status |
 | --- | --- |
 | Browser-based app (React + Web Audio API) | Implemented |
+| Flow Mode: full-screen live DJ performance with four keyboard/sample pads and a drawing canvas | Implemented (MVP) |
+| Flow groove inference: after four same-pad taps, continue a learned pulse or phrase until the current detected song section ends | Implemented (heuristic; no trained AI) |
+| Flow mouse gestures: draw a frequency/pan contour, hear the original synthesized sound and keep it in the saved mix | Implemented |
 | Import supported audio files, including WAV and MP3 | Implemented; codec support depends on browser |
 | Multi-track waveform editor | Implemented |
 | Drag clips, trim both edges, split, duplicate, remove | Implemented |
@@ -83,6 +86,17 @@ To simulate GitHub Pages paths, build with GITHUB_PAGES=true.
 
 **Export WAV** mixes audible tracks into one stereo, 44.1 kHz, 16-bit PCM WAV. Long renders are capped at 20 minutes to limit browser memory consumption.
 
+### Flow Mode: play first, edit later
+
+Click **Flow Mode** in the editor toolbar. The regular editor and its controls disappear, replaced by a live performance canvas. The current song plays continuously while you work. Import audio if the session is empty, then use Play/Space to start.
+
+- **A / S / D / F**: play kick, snare, hi-hat and impact instantly. The pads subtly adapt their sound to the song tempo and your tapping density. On the same pad, four or more taps teach Flow your timing. It continues a pulse or repeats a learned rhythmic phrase until the end of the current section, instead of globally extending the pattern into other sections.
+- **Mouse or touch**: tap any quarter of the canvas for its corresponding pad, or draw a line to synthesize a real stereo gesture. Vertical height controls pitch, horizontal movement controls stereo color, and scribbling introduces noise. Repeated strokes of a similar type can form their own learned rhythm.
+- **Sections / tempo**: Flow tries the existing manual markers first, otherwise estimates the song's sections and tempo locally. With no usable sections, it falls back to eight-bar phrases. These are approximate estimates, not foolproof downbeat recognition.
+- **Keep the result**: every performed hit and automatically repeated hit is an ordinary Bravery audio clip on a FLOW track. Pause, seek, return to Studio, save a .bravery project or export WAV without losing the performance. Use **Clear Flow** to remove generated layers while preserving the original recording.
+
+Timing is captured at actual key/pointer onset; the pulse model uses your taps as phase anchors. Latency depends on the browser/audio device, and complex syncopated phrases can be misinterpreted. Flow Mode is deterministic local pattern inference, not a remote generative AI service.
+
 ### Remix workflow
 
 Open the **Remix Lab** at the right or use **View → Remix panel**. For a hardtekk rhythm, choose **Hardtekk · 4** to repeat the kick every four beats. **Timing → Auto** follows the BPM field in the editor header. **Timing → Detected tempo map** follows region-specific BPM values. The **Periodic FX** tab repeats an effect on the selected clip with adjustable repetition, effect length, wet mix, offset and intensity.
@@ -97,7 +111,8 @@ The **Song Sections** window can turn detected/manual arrangement boundaries int
 
 ### Keyboard controls
 
-- Space: play/pause
+- Space: play/pause (including Flow Mode)
+- Flow Mode: A / S / D / F for four live pads, draw on the canvas, Escape to return to Studio
 - S: split at playhead
 - Delete / Backspace: delete selected clip
 - Ctrl/Cmd + Z: undo
