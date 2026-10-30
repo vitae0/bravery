@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { CATEGORIES, EFFECTS, SOUNDS } from './catalog.js';
 import { ViewMenu, RemixDock, WindowLayer } from './StudioWindows.jsx';
+import FlowMode from './FlowMode.jsx';
+import {FLOW_PADS,flowSectionAt,inferFlowLoop,classifyFlowGesture,synthesizeFlowGesture} from './flow.js';
 import { alignBeatEvents, transientsFromClip } from './beatSync.js';
 import { orderedClipIds, selectClipIds, translateSelectedClips } from './selection.js';
 import {
@@ -89,6 +91,12 @@ function App() {
   const [tempoRegions,setTempoRegions]=useState([]);
   const [songSections,setSongSections]=useState([]);
   const [remixOpen,setRemixOpen]=useState(true);
+  const [flowMode,setFlowMode]=useState(false);
+  const [flowDetectedSections,setFlowDetectedSections]=useState([]);
+  const [flowStatus,setFlowStatus]=useState({mode:'listening',message:'Tap four times on one pad to teach Bravery a groove.'});
+  const flowHistoryRef=useRef([]);
+  const flowSourcesRef=useRef(new Map());
+  const flowBuffersRef=useRef(new Map());
   const [openWindows,setOpenWindows]=useState([]);
   const [context,setContext]=useState(null);
   const [contextStrength,setContextStrength]=useState(1);
@@ -207,6 +215,7 @@ function App() {
       for(const source of current.sources)try{source.stop();}catch{ /* already ended */ }
       playbackRef.current=null;
     }
+    flowSourcesRef.current.clear();
     setPlaying(false);
     if(reset){playheadRef.current=0;setPlayhead(0);}
   },[]);
@@ -708,6 +717,133 @@ function App() {
     finally{setBusy(false);}
   },[activeClip,notify,selectedPrimaryClip]);
 
+
+  // FLOW MODE: stage new sounds without restarting the currently playing song.
+  // The same clips enter the original project track graph, so saving, seeking
+  // and OfflineAudioContext WAV mixdown all use the identical performance.
+  const scheduleFlowLive=useCallback((clip,immediate=false)=>{
+    const playback=playbackRef.current;
+    if(!playback)return null;
+    const {ctx,when,from}=playback;
+    const start=immediate?ctx.currentTime+0.008:when+clip.start-from;
+    if(start<ctx.currentTime+0.006)return null;
+    const source=ctx.createBufferSource();
+    source.buffer=clip.buffer;
+    const gain=ctx.createGain();
+    gain.gain.value=0.72;
+    source.connect(gain).connect(ctx.destination);
+    source.start(start,clip.offset||0,clip.duration);
+    playback.sources.push(source);
+    return source;
+  },[]);
+
+  const flowPlaySound=useCallback((kind,points=null)=>{
+    const playback=playbackRef.current;
+    const baseTracks=tracksRef.current.filter(t=>!t.flowKind);
+    const baseDuration=durationOf(baseTracks);
+    if(!playback || baseDuration<0.1) return;
+    const at=clamp(playback.from+Math.max(0,playback.ctx.currentTime-playback.when),0,baseDuration-0.01);
+    const sections=songSections.length?songSections:flowDetectedSections;
+    const section=flowSectionAt(at,sections,bpm,baseDuration);
+    let buffer;
+    const gesture=points?synthesizeFlowGesture(points):null;
+    if(points&&!gesture)return;
+    if(gesture){
+      buffer=makeBuffer(2,gesture.left.length);
+      buffer.copyToChannel(gesture.left,0);
+      buffer.copyToChannel(gesture.right,1);
+    }else{
+      let cached=flowBuffersRef.current.get(kind);
+      if(!cached){
+        const sound=FLOW_PADS.find(p=>p.kind===kind)?.sound||'zap';
+        cached=generateSound(sound);
+        flowBuffersRef.current.set(kind,cached);
+      }
+      buffer=cached;
+    }
+    const intensity=gesture?.intensity||0.72;
+    const manualName=points?'Flow '+kind.replace('gesture-','').toUpperCase() : 'Flow '+kind.toUpperCase();
+    const length=Math.min(buffer.duration,Math.max(0.01,baseDuration-at));
+    const clip={...clipFrom(manualName,buffer,at),duration:length,
+      flowAuto:false,flowKind:kind,flowSection:section.start};
+    const history=[...flowHistoryRef.current.filter(h=>h.time>=at-90),
+      {time:at,kind,intensity,sectionStart:section.start}].slice(-100);
+    flowHistoryRef.current=history;
+    const local=history.filter(h=>h.kind===kind&&h.sectionStart===section.start);
+    const plan=inferFlowLoop(local,bpm,section,at,220);
+    const marker=kind+':'+section.start;
+    for(const old of flowSourcesRef.current.get(marker)||[]){
+      // Do not cut sounds already underway. Only cancel future repetitions.
+      if(old.at>at+0.025)try{old.source.stop();}catch{}
+    }
+    flowSourcesRef.current.set(marker,[]);
+    const autoClips=plan.events.filter(e=>e.time<baseDuration-0.025).map(e=>({
+      ...clipFrom(manualName+' · learned',buffer,e.time),
+      duration:Math.min(buffer.duration,baseDuration-e.time),
+      flowAuto:true,flowKind:kind,flowSection:section.start
+    }));
+    const oldTracks=tracksRef.current;
+    const index=oldTracks.findIndex(t=>t.flowKind===kind);
+    const track=index<0?{...initialTrack('FLOW · '+manualName.replace('Flow ',''),
+      '#bfa0e7'),flowKind:kind,gain:0.72}:oldTracks[index];
+    const kept=track.clips.filter(c=>!(c.flowAuto&&c.flowSection===section.start&&c.start>=at-0.03));
+    const updated={...track,clips:[...kept,clip,...autoClips].sort((a,b)=>a.start-b.start)};
+    commit(before=>index<0?[...before,updated]:before.map(t=>t.id===track.id?updated:t));
+    scheduleFlowLive(clip,true);
+    const upcoming=[];
+    for(const generated of autoClips){
+      const source=scheduleFlowLive(generated);
+      if(source)upcoming.push({source,at:generated.start});
+    }
+    flowSourcesRef.current.set(marker,upcoming);
+    setFlowStatus(plan.mode==='listening'
+      ?{mode:plan.mode,message:manualName+' captured · '+local.length+'/4 hits. Keep playing naturally.'}
+      :{mode:plan.mode,message:manualName+' '+(plan.mode==='pulse'?'pulse':'phrase')+
+         ' learned · '+autoClips.length+' repeats until '+section.name+' ends. New taps reshape it.'});
+  },[bpm,songSections,flowDetectedSections,commit,scheduleFlowLive]);
+
+  const flowPad=useCallback(kind=>flowPlaySound(kind),[flowPlaySound]);
+  const flowDraw=useCallback(points=>{
+    const type=classifyFlowGesture(points).kind;
+    if(type!=='tap')flowPlaySound('gesture-'+type,points);
+  },[flowPlaySound]);
+
+  const clearFlow=useCallback(()=>{
+    const wasPlaying=!!playbackRef.current,at=playheadRef.current;
+    flowHistoryRef.current=[];
+    flowBuffersRef.current.clear();
+    setFlowStatus({mode:'listening',message:'Flow cleared. Start tapping to create a new groove.'});
+    commit(old=>old.filter(t=>!t.flowKind));
+    if(wasPlaying)playFrom(at);
+    else flowSourcesRef.current.clear();
+  },[commit,playFrom]);
+
+  useEffect(()=>{
+    if(!flowMode)return;
+    const primary=tracksRef.current.filter(t=>!t.flowKind).flatMap(t=>t.clips)
+      .filter(c=>c.duration>=3).sort((a,b)=>b.duration-a.duration)[0];
+    if(!primary)return;
+    let active=true;
+    // Estimates are deliberately heuristic and never sent to a server.
+    if(!songSections.length){
+      try {
+        const sections=suggestSections(slicedClip(primary))
+          .map(s=>({...s,start:s.start+primary.start,end:s.end+primary.start}));
+        if(active)setFlowDetectedSections(sections);
+      }catch{/* Eight-bar phrase fallback stays available. */}
+    }
+    if(!tempoRegions.length&&bpm===150){
+      analyzeTempo(slicedClip(primary)).then(result=>{
+        if(!active)return;
+        setBpm(Math.round(result.bpm));
+        setTempoRegions(result.regions.map(r=>({...r,start:r.start+primary.start,
+          end:r.end+primary.start})));
+      }).catch(()=>{/* Retain BPM from the project. */});
+    }
+    return ()=>{active=false;};
+  // Analyze only when the experience is opened, not at every playhead tick.
+  },[flowMode]);
+
   const splitAtSections=useCallback(()=>{
     if(!songSections.length){notify('Create section markers first.');return;}
     stopPlayback();
@@ -927,6 +1063,21 @@ function App() {
   const step=zoom>=140?1:zoom>=70?2:5;
   for(let sec=0;sec<=end;sec+=step)rulerMarks.push(sec);
 
+  if(flowMode) return <div className="app-shell flow-screen" onDragOver={e=>e.preventDefault()} onDrop={onRootDrop}>
+    <FlowMode playing={playing} playhead={playhead}
+      duration={durationOf(tracks.filter(t=>!t.flowKind))} bpm={bpm}
+      sections={songSections.length?songSections:flowDetectedSections} tracks={tracks}
+      status={flowStatus} onPlay={pause} onExit={()=>setFlowMode(false)}
+      onImport={()=>audioInput.current?.click()} onSave={saveProject} onExport={doExport}
+      onPad={flowPad} onGesture={flowDraw} onClear={clearFlow}/>
+    <input ref={audioInput} type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" multiple hidden
+      onChange={e=>{importAudio(e.target.files);e.target.value='';}}/>
+    <input ref={projectInput} type="file" accept=".bravery" hidden
+      onChange={e=>{loadProject(e.target.files[0]);e.target.value='';}}/>
+    {busy&&<div className="busy-layer"><div className="spinner"/><span>Processing audio in your browser...</span></div>}
+    {toast&&<div className="toast"><span>{toast}</span><IconButton title="Dismiss" onClick={()=>setToast('')}><X size={16}/></IconButton></div>}
+  </div>;
+
   return <div className="app-shell" onDragOver={e=>e.preventDefault()} onDrop={onRootDrop} onPointerDown={e=>{if(context&&!e.target.closest('.clip-context'))setContext(null);}}>
     <header className="topbar">
       <div className="brand"><span className="brand-icon"><AudioLines size={21} strokeWidth={2.7}/></span><span>bravery<span className="brand-period">.</span></span></div>
@@ -990,6 +1141,10 @@ function App() {
             <button title="Snap clips to sixteenth-note grid" className={'snap-toggle '+(snap?'enabled':'')} onClick={()=>setSnap(v=>!v)}><Magnet size={15}/> Snap</button>
             <div className="bpm-box"><span>BPM</span><input aria-label="Project BPM" type="number" min="40" max="240" value={bpm} onChange={e=>setBpm(clamp(Number(e.target.value)||40,40,240))}/></div>
             <button className="header-auto-bpm" disabled={busy||!duration} title="Analyze BPM and tempo changes" onClick={autoTempo}>Auto BPM</button>
+            <button className="remix-open-button" title="Open distraction-free live DJ Flow Mode"
+              onClick={()=>{setFlowMode(true);if(!playbackRef.current&&duration)playFrom(playheadRef.current);}}>
+              <Sparkles size={15}/> Flow Mode
+            </button>
             <button className="remix-open-button" title="Open Remix Lab" onClick={()=>setRemixOpen(v=>!v)}><Zap size={15}/> Remix</button>
             <div className="toolbar-sep"/>
             <IconButton title="Zoom out" onClick={()=>setZoom(v=>Math.max(30,v-15))}><Minus size={17}/></IconButton>
