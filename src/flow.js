@@ -54,7 +54,7 @@ export function inferFlowLoop(hits, bpm, section, now, limit=256) {
   // phase rather than assuming the imported song begins exactly on the beat.
   const regular=deviation<=Math.max(0.065, Math.min(0.19*beat, gap*0.16))
     && gaps.filter(g=>Math.abs(g-gap)<=Math.max(0.11,0.22*gap)).length>=Math.ceil(gaps.length*0.75);
-  const maxEvents=Math.max(0,Math.min(256,Math.floor(limit)));
+  const maxEvents=Math.max(0,Math.min(1600,Math.floor(limit)));
   const events=[];
   const future=Math.max(now+0.14, times.at(-1)+0.06);
   if(regular) {
