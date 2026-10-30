@@ -10,7 +10,7 @@ import {
 import { CATEGORIES, EFFECTS, SOUNDS } from './catalog.js';
 import { ViewMenu, RemixDock, WindowLayer } from './StudioWindows.jsx';
 import FlowMode from './FlowMode.jsx';
-import {FLOW_PADS,flowSectionAt,inferFlowLoop,classifyFlowGesture,synthesizeFlowGesture} from './flow.js';
+import {FLOW_PADS,flowSectionAt,inferFlowLoop,flowSoundFor,classifyFlowGesture,synthesizeFlowGesture} from './flow.js';
 import { alignBeatEvents, transientsFromClip } from './beatSync.js';
 import { orderedClipIds, selectClipIds, translateSelectedClips } from './selection.js';
 import {
@@ -744,7 +744,12 @@ function App() {
     if(!playback || baseDuration<0.1) return;
     const at=clamp(playback.from+Math.max(0,playback.ctx.currentTime-playback.when),0,baseDuration-0.01);
     const sections=songSections.length?songSections:flowDetectedSections;
-    const section=flowSectionAt(at,sections,bpm,baseDuration);
+    const localBpm=bpmAt(at,tempoRegions,bpm);
+    const section=flowSectionAt(at,sections,localBpm,baseDuration);
+    const history=[...flowHistoryRef.current.filter(h=>h.time>=at-90),
+      {time:at,kind,intensity:0.72,sectionStart:section.start}].slice(-100);
+    flowHistoryRef.current=history;
+    const local=history.filter(h=>h.kind===kind&&h.sectionStart===section.start);
     let buffer;
     const gesture=points?synthesizeFlowGesture(points):null;
     if(points&&!gesture)return;
@@ -753,11 +758,11 @@ function App() {
       buffer.copyToChannel(gesture.left,0);
       buffer.copyToChannel(gesture.right,1);
     }else{
-      let cached=flowBuffersRef.current.get(kind);
+      const sound=flowSoundFor(kind,localBpm,local);
+      let cached=flowBuffersRef.current.get(sound);
       if(!cached){
-        const sound=FLOW_PADS.find(p=>p.kind===kind)?.sound||'zap';
         cached=generateSound(sound);
-        flowBuffersRef.current.set(kind,cached);
+        flowBuffersRef.current.set(sound,cached);
       }
       buffer=cached;
     }
@@ -766,11 +771,8 @@ function App() {
     const length=Math.min(buffer.duration,Math.max(0.01,baseDuration-at));
     const clip={...clipFrom(manualName,buffer,at),duration:length,
       flowAuto:false,flowKind:kind,flowSection:section.start};
-    const history=[...flowHistoryRef.current.filter(h=>h.time>=at-90),
-      {time:at,kind,intensity,sectionStart:section.start}].slice(-100);
-    flowHistoryRef.current=history;
-    const local=history.filter(h=>h.kind===kind&&h.sectionStart===section.start);
-    const plan=inferFlowLoop(local,bpm,section,at,220);
+    history[history.length-1].intensity=intensity;
+    const plan=inferFlowLoop(local,localBpm,section,at,220);
     const marker=kind+':'+section.start;
     for(const old of flowSourcesRef.current.get(marker)||[]){
       // Do not cut sounds already underway. Only cancel future repetitions.
@@ -800,7 +802,7 @@ function App() {
       ?{mode:plan.mode,message:manualName+' captured · '+local.length+'/4 hits. Keep playing naturally.'}
       :{mode:plan.mode,message:manualName+' '+(plan.mode==='pulse'?'pulse':'phrase')+
          ' learned · '+autoClips.length+' repeats until '+section.name+' ends. New taps reshape it.'});
-  },[bpm,songSections,flowDetectedSections,commit,scheduleFlowLive]);
+  },[bpm,tempoRegions,songSections,flowDetectedSections,commit,scheduleFlowLive]);
 
   const flowPad=useCallback(kind=>flowPlaySound(kind),[flowPlaySound]);
   const flowDraw=useCallback(points=>{
@@ -1065,7 +1067,7 @@ function App() {
 
   if(flowMode) return <div className="app-shell flow-screen" onDragOver={e=>e.preventDefault()} onDrop={onRootDrop}>
     <FlowMode playing={playing} playhead={playhead}
-      duration={durationOf(tracks.filter(t=>!t.flowKind))} bpm={bpm}
+      duration={durationOf(tracks.filter(t=>!t.flowKind))} bpm={bpmAt(playhead,tempoRegions,bpm)}
       sections={songSections.length?songSections:flowDetectedSections} tracks={tracks}
       status={flowStatus} onPlay={pause} onExit={()=>setFlowMode(false)}
       onImport={()=>audioInput.current?.click()} onSave={saveProject} onExport={doExport}
