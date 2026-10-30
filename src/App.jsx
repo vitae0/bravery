@@ -815,7 +815,7 @@ function App() {
     const clip={...clipFrom(manualName,buffer,at),duration:length,
       flowAuto:false,flowKind:kind,flowSection:section.start};
     history[history.length-1].intensity=intensity;
-    const plan=inferFlowLoop(local,localBpm,section,at,220);
+    const plan=inferFlowLoop(local,localBpm,section,at,1200);
     const marker=kind+':'+section.start;
     for(const old of flowSourcesRef.current.get(marker)||[]){
       // Do not cut sounds already underway. Only cancel future repetitions.
@@ -824,7 +824,7 @@ function App() {
     flowSourcesRef.current.set(marker,[]);
     const autoClips=plan.events.filter(e=>e.time<baseDuration-0.025).map(e=>({
       ...clipFrom(manualName+' · learned',buffer,e.time),
-      duration:Math.min(buffer.duration,baseDuration-e.time),
+      duration:Math.min(buffer.duration,baseDuration-e.time,section.end-e.time),
       flowAuto:true,flowKind:kind,flowSection:section.start
     }));
     const oldTracks=tracksRef.current;
