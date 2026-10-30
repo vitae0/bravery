@@ -97,6 +97,7 @@ function App() {
   const flowHistoryRef=useRef([]);
   const flowSourcesRef=useRef(new Map());
   const flowBuffersRef=useRef(new Map());
+  const flowPreviewRef=useRef(null);
   const [openWindows,setOpenWindows]=useState([]);
   const [context,setContext]=useState(null);
   const [contextStrength,setContextStrength]=useState(1);
@@ -216,6 +217,10 @@ function App() {
       playbackRef.current=null;
     }
     flowSourcesRef.current.clear();
+    if(flowPreviewRef.current){
+      try{flowPreviewRef.current.osc.stop();}catch{/* The oscillator already finished. */}
+      flowPreviewRef.current=null;
+    }
     setPlaying(false);
     if(reset){playheadRef.current=0;setPlayhead(0);}
   },[]);
@@ -737,12 +742,50 @@ function App() {
     return source;
   },[]);
 
-  const flowPlaySound=useCallback((kind,points=null)=>{
+  // Immediate aural feedback while a gesture is being painted. The finished
+  // curve is stored separately as a real stereo audio clip for exact export.
+  const flowPreviewStart=useCallback(p=>{
+    if(!playbackRef.current||flowPreviewRef.current)return;
+    const playback=playbackRef.current,ctx=playback.ctx;
+    const osc=ctx.createOscillator(),gain=ctx.createGain(),pan=ctx.createStereoPanner();
+    osc.type='triangle';
+    osc.frequency.value=70*Math.pow(27,1-p.y);
+    pan.pan.value=(p.x-.5)*1.5;
+    gain.gain.setValueAtTime(0,ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.12,ctx.currentTime+.02);
+    osc.connect(gain).connect(pan).connect(ctx.destination);
+    osc.start();
+    flowPreviewRef.current={osc,gain,pan,
+      startSongTime:playback.from+Math.max(0,ctx.currentTime-playback.when)};
+  },[]);
+  const flowPreviewMove=useCallback(p=>{
+    const preview=flowPreviewRef.current;
+    if(!preview)return;
+    const ctx=playbackRef.current?.ctx;
+    if(!ctx)return;
+    preview.osc.frequency.setTargetAtTime(70*Math.pow(27,1-p.y),ctx.currentTime,.017);
+    preview.pan.pan.setTargetAtTime((p.x-.5)*1.5,ctx.currentTime,.017);
+  },[]);
+  const flowPreviewEnd=useCallback(()=>{
+    const preview=flowPreviewRef.current;
+    if(!preview)return;
+    flowPreviewRef.current=null;
+    const ctx=playbackRef.current?.ctx;
+    if(!ctx){try{preview.osc.stop();}catch{}return;}
+    preview.gain.gain.cancelScheduledValues(ctx.currentTime);
+    preview.gain.gain.setTargetAtTime(0,ctx.currentTime,.008);
+    try{preview.osc.stop(ctx.currentTime+.05);}catch{}
+  },[]);
+
+  const flowPlaySound=useCallback((kind,points=null,previewStarted=false)=>{
     const playback=playbackRef.current;
     const baseTracks=tracksRef.current.filter(t=>!t.flowKind);
     const baseDuration=durationOf(baseTracks);
     if(!playback || baseDuration<0.1) return;
-    const at=clamp(playback.from+Math.max(0,playback.ctx.currentTime-playback.when),0,baseDuration-0.01);
+    const onset=points&&previewStarted&&flowPreviewRef.current
+      ?flowPreviewRef.current.startSongTime
+      :playback.from+Math.max(0,playback.ctx.currentTime-playback.when);
+    const at=clamp(onset,0,baseDuration-0.01);
     const sections=songSections.length?songSections:flowDetectedSections;
     const localBpm=bpmAt(at,tempoRegions,bpm);
     const section=flowSectionAt(at,sections,localBpm,baseDuration);
@@ -791,7 +834,7 @@ function App() {
     const kept=track.clips.filter(c=>!(c.flowAuto&&c.flowSection===section.start&&c.start>=at-0.03));
     const updated={...track,clips:[...kept,clip,...autoClips].sort((a,b)=>a.start-b.start)};
     commit(before=>index<0?[...before,updated]:before.map(t=>t.id===track.id?updated:t));
-    scheduleFlowLive(clip,true);
+    if(!points||!previewStarted)scheduleFlowLive(clip,true);
     const upcoming=[];
     for(const generated of autoClips){
       const source=scheduleFlowLive(generated);
@@ -805,9 +848,9 @@ function App() {
   },[bpm,tempoRegions,songSections,flowDetectedSections,commit,scheduleFlowLive]);
 
   const flowPad=useCallback(kind=>flowPlaySound(kind),[flowPlaySound]);
-  const flowDraw=useCallback(points=>{
+  const flowDraw=useCallback((points,previewStarted=false)=>{
     const type=classifyFlowGesture(points).kind;
-    if(type!=='tap')flowPlaySound('gesture-'+type,points);
+    if(type!=='tap')flowPlaySound('gesture-'+type,points,previewStarted);
   },[flowPlaySound]);
 
   const clearFlow=useCallback(()=>{
@@ -1071,7 +1114,9 @@ function App() {
       sections={songSections.length?songSections:flowDetectedSections} tracks={tracks}
       status={flowStatus} onPlay={pause} onExit={()=>setFlowMode(false)}
       onImport={()=>audioInput.current?.click()} onSave={saveProject} onExport={doExport}
-      onPad={flowPad} onGesture={flowDraw} onClear={clearFlow}/>
+      onPad={flowPad} onGesture={flowDraw} onClear={clearFlow}
+      onPreviewStart={flowPreviewStart} onPreviewMove={flowPreviewMove}
+      onPreviewEnd={flowPreviewEnd}/>
     <input ref={audioInput} type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac" multiple hidden
       onChange={e=>{importAudio(e.target.files);e.target.value='';}}/>
     <input ref={projectInput} type="file" accept=".bravery" hidden
